@@ -16,9 +16,11 @@ export function AuthProvider({ children }) {
       .catch(() => localStorage.removeItem("az_token"))
       .finally(() => setLoading(false));
   }, []);
-
+  
+  const API = "https://heartoz.onrender.com/api"
+  
   const loginWithGoogle = () => {
-    window.location.href = "http://localhost:5000/api/auth/google";
+    window.location.href = `${API}/auth/google`;
   };
 
   const logout = async () => {

@@ -70,7 +70,7 @@ app.use((req, res, next) => {
 });
 
 // ── CORS ──────────────────────────────────────────────────────────────────
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || process.env.CLIENT_URL || "http://localhost:5173")
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || process.env.CLIENT_URL || "https://heartox.netlify.app")
   .split(",").map(o => o.trim());
 
 app.use(cors({
