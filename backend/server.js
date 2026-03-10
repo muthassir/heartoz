@@ -1,19 +1,18 @@
-// server/index.js — Maximum Security
+// server/index.js
 require("dotenv").config();
 
-// ── Validate env before anything else — crash fast on misconfiguration ─────
 const { validateEnv } = require("./utils/validateEnv");
 validateEnv();
+
+// ── Init Firebase Admin first ──────────────────────────────────────────────
+const { initFirebase } = require("./config/firebase");
+initFirebase();
 
 const express      = require("express");
 const cors         = require("cors");
 const helmet       = require("helmet");
 const morgan       = require("morgan");
 const compression  = require("compression");
-const session      = require("express-session");
-const connectMongo = require("connect-mongo");
-const MongoStore   = connectMongo.default || connectMongo;
-const passport     = require("./config/passport");
 const connectDB    = require("./config/db");
 const logger       = require("./utils/logger");
 const requestId    = require("./middlewares/requestId");
@@ -34,7 +33,7 @@ connectDB();
 
 if (isProd) app.set("trust proxy", 1);
 
-// ── Request ID — first so every log line gets tagged ──────────────────────
+// ── Request ID ────────────────────────────────────────────────────────────
 app.use(requestId);
 
 // ── Helmet ────────────────────────────────────────────────────────────────
@@ -62,7 +61,6 @@ app.use(helmet({
   permittedCrossDomainPolicies: false,
 }));
 
-// Remove fingerprint headers
 app.use((req, res, next) => {
   res.removeHeader("X-Powered-By");
   res.removeHeader("Server");
@@ -70,8 +68,6 @@ app.use((req, res, next) => {
 });
 
 // ── CORS ──────────────────────────────────────────────────────────────────
-// FIX 1: fallback to empty string to avoid crash if both vars missing
-// FIX 2: strip trailing slashes so "https://app.netlify.app/" matches
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || process.env.CLIENT_URL || "http://localhost:5173")
   .split(",")
   .map(o => o.trim().replace(/\/$/, ""));
@@ -80,9 +76,7 @@ logger.info("CORS allowed origins", { origins: allowedOrigins });
 
 app.use(cors({
   origin: (origin, cb) => {
-    // FIX 3: always allow no-origin requests (OAuth redirects have no origin header)
     if (!origin) return cb(null, true);
-    // Strip trailing slash from incoming origin before comparing
     const normOrigin = origin.replace(/\/$/, "");
     if (allowedOrigins.includes(normOrigin)) return cb(null, true);
     logger.security("CORS blocked", { origin, allowedOrigins });
@@ -105,7 +99,7 @@ app.use((req, res, next) => {
 });
 app.use(express.urlencoded({ extended: false, limit: "50kb" }));
 
-// ── Security middleware chain — ORDER MATTERS ─────────────────────────────
+// ── Security middleware chain ─────────────────────────────────────────────
 app.use(suspiciousActivity);
 app.use(noSQLSanitize);
 app.use(xssSanitize);
@@ -120,29 +114,6 @@ app.use(morgan(isProd ? "combined" : "dev", {
   stream: { write: (msg) => logger.info(msg.trim()) },
   skip:   (req) => req.path === "/api/health",
 }));
-
-// ── Session ───────────────────────────────────────────────────────────────
-app.use(session({
-  name:              "az.sid",
-  secret:            process.env.SESSION_SECRET,
-  resave:            false,
-  saveUninitialized: false,
-  store: MongoStore.create({
-    mongoUrl:   process.env.MONGODB_URI,
-    ttl:        10 * 60,
-    autoRemove: "native",
-    crypto:     { secret: process.env.SESSION_SECRET },
-  }),
-  cookie: {
-    secure:   isProd,
-    httpOnly: true,
-    sameSite: isProd ? "none" : "lax",  // FIX 4: "none" needed for cross-site OAuth in prod
-    maxAge:   10 * 60 * 1000,
-  },
-}));
-
-app.use(passport.initialize());
-app.use(passport.session());
 
 // ── Routes ────────────────────────────────────────────────────────────────
 app.use("/api/auth",    authRoutes);
@@ -162,7 +133,6 @@ app.use((err, req, res, next) => {
     message: err.message, status,
     path: req.path, method: req.method,
     ip: req.ip, requestId: req.requestId,
-    stack: err.stack,
   });
   res.status(status).json({
     message: isProd

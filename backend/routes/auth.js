@@ -1,60 +1,59 @@
 // server/routes/auth.js
 const express        = require("express");
-const jwt            = require("jsonwebtoken");
-const { v4: uuidv4 } = require("uuid");
-const passport       = require("passport");
-const TokenBlacklist = require("../models/TokenBlacklist");
-const { protect, audit, getIP } = require("../middlewares/auth");
-const { authLimiter } = require("../middlewares/rateLimiter");
-const logger         = require("../utils/logger");
+const admin          = require("firebase-admin");
+const User           = require("../models/User");
+const { protect, audit } = require("../middlewares/auth");
+const { authLimiter }    = require("../middlewares/rateLimiter");
+const logger             = require("../utils/logger");
 
 const router = express.Router();
 
-// ── Sign JWT with JTI (unique token ID) for revocation support ─────────────
-const signToken = (user) => {
-  const jti       = uuidv4();
-  const expiresIn = process.env.JWT_EXPIRES_IN || "30d";
-  const token     = jwt.sign(
-    { id: user._id, jti },
-    process.env.JWT_SECRET,
-    {
-      expiresIn,
-      issuer:   "az-date-api",
-      audience: "az-date-client",
+// ── POST /api/auth/sync ────────────────────────────────────────────────────
+// Called after Firebase login — verifies Firebase token, creates/updates user in MongoDB
+router.post("/sync", authLimiter, async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      return res.status(401).json({ message: "No token provided." });
     }
-  );
-  return { token, jti };
-};
 
-// ── GET /api/auth/google ───────────────────────────────────────────────────
-router.get("/google",
-  authLimiter,
-  passport.authenticate("google", {
-    scope:   ["profile", "email"],
-    session: true,
-    // state parameter prevents CSRF during OAuth flow
-    state:   uuidv4(),
-  })
-);
+    const idToken = authHeader.split("Bearer ")[1];
 
-// ── GET /api/auth/google/callback ─────────────────────────────────────────
-router.get("/google/callback",
-  authLimiter,
-  passport.authenticate("google", {
-    session:         true,
-    failureRedirect: `${process.env.CLIENT_URL}/login?error=oauth`,
-  }),
-  (req, res) => {
-    const { token } = signToken(req.user);
+    // Verify token with Firebase Admin SDK
+    const decoded = await admin.auth().verifyIdToken(idToken);
 
-    // Log successful login
-    logger.info("User logged in via Google", { userId: req.user._id });
-    audit(req, "LOGIN_GOOGLE", { resource: `user:${req.user._id}` });
+    const { uid, email, name, picture } = decoded;
 
-    // Redirect with token — short-lived, client extracts and stores in memory
-    res.redirect(`${process.env.CLIENT_URL}/auth/callback?token=${token}`);
+    // Upsert user — create if new, update if existing
+    let user = await User.findOneAndUpdate(
+      { firebaseUid: uid },
+      {
+        firebaseUid: uid,
+        name:        name?.slice(0, 100) || "User",
+        email:       email?.toLowerCase(),
+        photo:       picture || "",
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    logger.info("User synced", { userId: user._id, email: user.email });
+    audit(req, "LOGIN_FIREBASE", { resource: `user:${user._id}` });
+
+    res.json({
+      id:       user._id,
+      name:     user.name,
+      email:    user.email,
+      photo:    user.photo,
+      coupleId: user.coupleId,
+    });
+  } catch (err) {
+    logger.error("Auth sync error", { error: err.message });
+    if (err.code?.startsWith("auth/")) {
+      return res.status(401).json({ message: "Invalid or expired token." });
+    }
+    res.status(500).json({ message: "Auth failed." });
   }
-);
+});
 
 // ── GET /api/auth/me ───────────────────────────────────────────────────────
 router.get("/me", protect, (req, res) => {
@@ -68,48 +67,11 @@ router.get("/me", protect, (req, res) => {
 });
 
 // ── POST /api/auth/logout ──────────────────────────────────────────────────
-// Blacklists the current JWT so it can never be used again
-router.post("/logout", protect, async (req, res) => {
-  try {
-    const token   = req.headers.authorization?.split(" ")[1];
-    const decoded = jwt.decode(token);
-
-    if (decoded?.jti) {
-      const expiresAt = new Date(decoded.exp * 1000);
-      await TokenBlacklist.create({
-        jti:       decoded.jti,
-        userId:    req.user._id,
-        expiresAt,
-        reason:    "logout",
-      });
-    }
-
-    req.logout?.(() => {});
-    audit(req, "LOGOUT", { resource: `user:${req.user._id}` });
-    logger.info("User logged out", { userId: req.user._id });
-
-    res.json({ message: "Logged out successfully." });
-  } catch (err) {
-    logger.error("Logout error", { error: err.message });
-    res.status(500).json({ message: "Logout failed." });
-  }
-});
-
-// ── POST /api/auth/revoke-all ──────────────────────────────────────────────
-// Emergency: revoke ALL tokens for this user (e.g. account compromise)
-// Since we can't enumerate all JWTs, we update a "tokenIssuedBefore" field on the user.
-router.post("/revoke-all", protect, async (req, res) => {
-  try {
-    const User = require("../models/User");
-    await User.findByIdAndUpdate(req.user._id, {
-      tokenIssuedBefore: new Date(),
-    });
-    audit(req, "REVOKE_ALL_TOKENS", { resource: `user:${req.user._id}` });
-    logger.security("All tokens revoked for user", { userId: req.user._id });
-    res.json({ message: "All sessions revoked. Please log in again." });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to revoke sessions." });
-  }
+// Firebase handles token invalidation — we just log it
+router.post("/logout", protect, (req, res) => {
+  audit(req, "LOGOUT", { resource: `user:${req.user._id}` });
+  logger.info("User logged out", { userId: req.user._id });
+  res.json({ message: "Logged out." });
 });
 
 module.exports = router;

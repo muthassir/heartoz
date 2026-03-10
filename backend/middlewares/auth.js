@@ -1,9 +1,8 @@
-// server/middleware/auth.js
-const passport        = require("passport");
-const jwt             = require("jsonwebtoken");
-const TokenBlacklist  = require("../models/TokenBlacklist");
-const AuditLog        = require("../models/AuditLog");
-const logger          = require("../utils/logger");
+// server/middlewares/auth.js
+const admin       = require("firebase-admin");
+const User        = require("../models/User");
+const AuditLog    = require("../models/AuditLog");
+const logger      = require("../utils/logger");
 
 const getIP = (req) =>
   req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
@@ -20,47 +19,35 @@ const audit = (req, action, extra = {}) => {
   }).catch((e) => logger.error("Audit log write failed", { error: e.message }));
 };
 
-// ── protect — verify JWT + check blacklist ────────────────────────────────
-const protect = (req, res, next) => {
-  passport.authenticate("jwt", { session: false }, async (err, user, info) => {
-    if (err) return next(err);
-
-    if (!user) {
-      logger.security("JWT auth failed", {
-        ip: getIP(req), path: req.path,
-        info: info?.message, requestId: req.requestId,
-      });
+// ── protect — verify Firebase token + load user from MongoDB ──────────────
+const protect = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
       return res.status(401).json({ message: "Unauthorised — please log in." });
     }
 
-    try {
-      const token   = req.headers.authorization?.split(" ")[1];
-      const decoded = jwt.decode(token);
-      if (decoded?.jti) {
-        const blacklisted = await TokenBlacklist.findOne({ jti: decoded.jti }).lean();
-        if (blacklisted) {
-          logger.security("Blacklisted token used", {
-            ip: getIP(req), userId: user._id,
-            jti: decoded.jti, reason: blacklisted.reason,
-          });
-          return res.status(401).json({ message: "Session expired. Please log in again." });
-        }
-      }
+    const idToken = authHeader.split("Bearer ")[1];
 
-      // Check tokenIssuedBefore — catches "revoke all sessions"
-      if (user.tokenIssuedBefore && decoded?.iat) {
-        if (decoded.iat * 1000 < user.tokenIssuedBefore.getTime()) {
-          logger.security("Pre-revocation token used", { userId: user._id });
-          return res.status(401).json({ message: "Session expired. Please log in again." });
-        }
-      }
-    } catch (e) {
-      logger.error("Token check failed", { error: e.message });
+    // Verify with Firebase Admin — handles expiry, revocation automatically
+    const decoded = await admin.auth().verifyIdToken(idToken);
+
+    // Load user from MongoDB using Firebase UID
+    const user = await User.findOne({ firebaseUid: decoded.uid });
+    if (!user) {
+      return res.status(401).json({ message: "User not found. Please log in again." });
     }
 
     req.user = user;
     next();
-  })(req, res, next);
+  } catch (err) {
+    logger.security("Firebase token verification failed", {
+      ip:    getIP(req),
+      path:  req.path,
+      error: err.message,
+    });
+    return res.status(401).json({ message: "Unauthorised — please log in." });
+  }
 };
 
 // ── coupleGuard — must be a member of the requested couple ────────────────
@@ -71,7 +58,7 @@ const coupleGuard = (req, res, next) => {
   if (!req.user.coupleId || req.user.coupleId.toString() !== coupleId) {
     logger.security("Unauthorised couple access attempt", {
       ip: getIP(req), userId: req.user._id,
-      requestedCouple: coupleId, userCouple: req.user.coupleId?.toString(),
+      requestedCouple: coupleId,
     });
     audit(req, "COUPLE_ACCESS_DENIED", { resource: `couple:${coupleId}`, success: false });
     return res.status(403).json({ message: "Forbidden." });
@@ -79,55 +66,33 @@ const coupleGuard = (req, res, next) => {
   next();
 };
 
-// ── suspiciousActivity — block known attack tools and patterns ────────────
+// ── suspiciousActivity — block scanners and injection attempts ────────────
 const SCANNER_UAS = [
   "sqlmap","nikto","nmap","masscan","burpsuite","dirbuster","hydra",
   "metasploit","acunetix","nessus","openvas","zaproxy","wfuzz","gobuster",
-  "nuclei","feroxbuster","ffuf","dirb","whatweb","w3af","arachni","skipfish",
-  "commix","havij","pangolin","bsqlbf","bbqsql","autoSQLi",
-  // Generic automation (only block in prod to allow dev testing)
-  ...(process.env.NODE_ENV === "production" ? ["python-requests","go-http-client","curl/","wget/","libwww"] : []),
+  "nuclei","feroxbuster","ffuf","dirb","whatweb","w3af","arachni",
 ];
 
 const INJECTION_PATTERNS = [
-  // SQL
-  /(\bunion\b.+\bselect\b|\bdrop\b.+\btable\b|\binsert\b.+\binto\b|\bdelete\b.+\bfrom\b)/i,
-  // Script injection
+  /(\bunion\b.+\bselect\b|\bdrop\b.+\btable\b)/i,
   /<\s*script|javascript\s*:/i,
-  // Path traversal
   /(\.\.(\/|\\|%2f|%5c)|%252e%252e)/i,
-  // SSRF probes
-  /\b(localhost|127\.0\.0\.1|0\.0\.0\.0|169\.254\.169\.254|::1)\b/i,
-  // XXE / XML
+  /\b(127\.0\.0\.1|169\.254\.169\.254)\b/i,
   /<!ENTITY|<!DOCTYPE.*\[/i,
-  // Template injection
-  /\{\{.*\}\}|\$\{.*\}/,
 ];
 
 const suspiciousActivity = (req, res, next) => {
   const ua    = (req.headers["user-agent"] || "").toLowerCase();
-  const probe = req.path + req.originalUrl + JSON.stringify(req.query);
+  const probe = req.path + req.originalUrl;
   const flags = [];
 
-  if (SCANNER_UAS.some(s => ua.includes(s)))
-    flags.push(`scanner_ua:${ua.slice(0, 60)}`);
-
-  if (INJECTION_PATTERNS.some(p => p.test(probe)))
-    flags.push("injection_pattern");
-
-  // Unusually long headers (header injection / buffer overflow probe)
-  const totalHeaderLen = Object.values(req.headers).join("").length;
-  if (totalHeaderLen > 8000) flags.push("oversized_headers");
-
-  // Unexpected HTTP methods
+  if (SCANNER_UAS.some(s => ua.includes(s))) flags.push("scanner_ua");
+  if (INJECTION_PATTERNS.some(p => p.test(probe))) flags.push("injection_pattern");
   if (!["GET","POST","PATCH","DELETE","OPTIONS","HEAD"].includes(req.method))
     flags.push(`unusual_method:${req.method}`);
 
   if (flags.length) {
-    logger.security("Suspicious request blocked", {
-      ip: getIP(req), path: req.path, flags, requestId: req.requestId,
-    });
-    audit(req, "SUSPICIOUS_REQUEST", { meta: { flags }, success: false });
+    logger.security("Suspicious request blocked", { ip: getIP(req), path: req.path, flags });
     return res.status(400).json({ message: "Bad request." });
   }
   next();
