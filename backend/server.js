@@ -5,18 +5,18 @@ require("dotenv").config();
 const { validateEnv } = require("./utils/validateEnv");
 validateEnv();
 
-const express     = require("express");
-const cors        = require("cors");
-const helmet      = require("helmet");
-const morgan      = require("morgan");
-const compression = require("compression");
-const session        = require("express-session");
-const connectMongo   = require("connect-mongo");
-const MongoStore     = connectMongo.default || connectMongo;
-const passport    = require("./config/passport");
-const connectDB   = require("./config/db");
-const logger      = require("./utils/logger");
-const requestId   = require("./middlewares/requestId");
+const express      = require("express");
+const cors         = require("cors");
+const helmet       = require("helmet");
+const morgan       = require("morgan");
+const compression  = require("compression");
+const session      = require("express-session");
+const connectMongo = require("connect-mongo");
+const MongoStore   = connectMongo.default || connectMongo;
+const passport     = require("./config/passport");
+const connectDB    = require("./config/db");
+const logger       = require("./utils/logger");
+const requestId    = require("./middlewares/requestId");
 
 const { globalLimiter }  = require("./middlewares/rateLimiter");
 const { noSQLSanitize, xssSanitize, hppProtect, depthGuard } = require("./middlewares/sanitize");
@@ -62,7 +62,7 @@ app.use(helmet({
   permittedCrossDomainPolicies: false,
 }));
 
-// Remove any remaining fingerprint headers
+// Remove fingerprint headers
 app.use((req, res, next) => {
   res.removeHeader("X-Powered-By");
   res.removeHeader("Server");
@@ -70,15 +70,23 @@ app.use((req, res, next) => {
 });
 
 // ── CORS ──────────────────────────────────────────────────────────────────
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || process.env.CLIENT_URL || "https://heartox.netlify.app")
-  .split(",").map(o => o.trim());
+// FIX 1: fallback to empty string to avoid crash if both vars missing
+// FIX 2: strip trailing slashes so "https://app.netlify.app/" matches
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || process.env.CLIENT_URL || "http://localhost:5173")
+  .split(",")
+  .map(o => o.trim().replace(/\/$/, ""));
+
+logger.info("CORS allowed origins", { origins: allowedOrigins });
 
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin && !isProd) return cb(null, true);
-    if (allowedOrigins.includes(origin)) return cb(null, true);
-    logger.security("CORS blocked", { origin });
-    cb(new Error("CORS: origin not allowed"));
+    // FIX 3: always allow no-origin requests (OAuth redirects have no origin header)
+    if (!origin) return cb(null, true);
+    // Strip trailing slash from incoming origin before comparing
+    const normOrigin = origin.replace(/\/$/, "");
+    if (allowedOrigins.includes(normOrigin)) return cb(null, true);
+    logger.security("CORS blocked", { origin, allowedOrigins });
+    cb(new Error(`CORS: origin ${origin} not allowed`));
   },
   credentials:    true,
   methods:        ["GET","POST","PATCH","DELETE","OPTIONS"],
@@ -87,33 +95,30 @@ app.use(cors({
   maxAge:         600,
 }));
 
-// ── Body size limits — per-route, not a global catch-all ─────────────────
-// Image routes get 8mb; everything else 50kb — stops payload-based attacks
+// ── Body size limits ──────────────────────────────────────────────────────
 app.use((req, res, next) => {
   const isImageRoute =
     (req.method === "PATCH" && /\/dates\/[A-Z]$/.test(req.path)) ||
-    (req.method === "POST"  && req.path.endsWith("/memories"))     ||
+    (req.method === "POST"  && req.path.endsWith("/memories"))    ||
     (req.method === "PATCH" && /\/memories\//.test(req.path));
   express.json({ limit: isImageRoute ? "8mb" : "50kb" })(req, res, next);
 });
 app.use(express.urlencoded({ extended: false, limit: "50kb" }));
 
-// ── Security middlewares chain — ORDER MATTERS ─────────────────────────────
-app.use(suspiciousActivity); // Block scanners/injections before any parsing
-app.use(noSQLSanitize);      // Strip $ operators
-app.use(xssSanitize);        // Strip XSS
-app.use(hppProtect);         // HTTP param pollution
-app.use(depthGuard);         // JSON depth bomb
-app.use(globalLimiter);      // IP rate limit
+// ── Security middleware chain — ORDER MATTERS ─────────────────────────────
+app.use(suspiciousActivity);
+app.use(noSQLSanitize);
+app.use(xssSanitize);
+app.use(hppProtect);
+app.use(depthGuard);
+app.use(globalLimiter);
 
 app.use(compression());
 
-// ── Logging — include requestId in every access log line ─────────────────
+// ── Logging ───────────────────────────────────────────────────────────────
 app.use(morgan(isProd ? "combined" : "dev", {
-  stream: {
-    write: (msg) => logger.info(msg.trim()),
-  },
-  skip: (req) => req.path === "/api/health",
+  stream: { write: (msg) => logger.info(msg.trim()) },
+  skip:   (req) => req.path === "/api/health",
 }));
 
 // ── Session ───────────────────────────────────────────────────────────────
@@ -131,7 +136,7 @@ app.use(session({
   cookie: {
     secure:   isProd,
     httpOnly: true,
-    sameSite: isProd ? "strict" : "lax",
+    sameSite: isProd ? "none" : "lax",  // FIX 4: "none" needed for cross-site OAuth in prod
     maxAge:   10 * 60 * 1000,
   },
 }));
@@ -144,7 +149,7 @@ app.use("/api/auth",    authRoutes);
 app.use("/api/invites", inviteRoutes);
 app.use("/api/couples", coupleRoutes);
 
-// ── Health — no info leak ─────────────────────────────────────────────────
+// ── Health ────────────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
 // ── 404 ───────────────────────────────────────────────────────────────────
@@ -164,7 +169,7 @@ app.use((err, req, res, next) => {
       ? (status < 500 ? err.message : "Internal server error.")
       : err.message,
     ...(isProd ? {} : { stack: err.stack }),
-    requestId: req.requestId, // Always include so user can report it
+    requestId: req.requestId,
   });
 });
 

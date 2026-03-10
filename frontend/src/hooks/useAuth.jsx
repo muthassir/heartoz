@@ -18,7 +18,8 @@ export function AuthProvider({ children }) {
   }, []);
   
   const API = "https://heartoz.onrender.com/api"
-  
+    // const API = "http://localhost:5000/api"
+
   const loginWithGoogle = () => {
     window.location.href = `${API}/auth/google`;
   };
