@@ -1,16 +1,11 @@
 // server/utils/validateEnv.js
-// Validates all required environment variables at startup.
-// Crashes immediately with a clear message if anything is wrong.
-// A misconfigured server is more dangerous than a crashed one.
-
 const crypto = require("crypto");
 
 const REQUIRED = [
   "MONGODB_URI",
-  "JWT_SECRET",
-  "SESSION_SECRET",
-  "GOOGLE_CLIENT_ID",
-  "GOOGLE_CLIENT_SECRET",
+  "FIREBASE_PROJECT_ID",
+  "FIREBASE_CLIENT_EMAIL",
+  "FIREBASE_PRIVATE_KEY",
   "CLIENT_URL",
 ];
 
@@ -31,26 +26,23 @@ const validateEnv = () => {
     process.exit(1);
   }
 
-  // ── Check secret strength ────────────────────────────────────────────────
+  // ── Check Firebase vars look valid ───────────────────────────────────────
   const warnings = [];
 
-  if (process.env.JWT_SECRET.length < 32) {
-    warnings.push("JWT_SECRET is too short — use at least 32 characters (64 recommended).");
+  if (!process.env.FIREBASE_CLIENT_EMAIL.includes("@")) {
+    warnings.push("FIREBASE_CLIENT_EMAIL looks invalid — should be a service account email.");
   }
-  if (process.env.SESSION_SECRET.length < 32) {
-    warnings.push("SESSION_SECRET is too short — use at least 32 characters.");
+  if (!process.env.FIREBASE_PRIVATE_KEY.includes("BEGIN PRIVATE KEY")) {
+    warnings.push("FIREBASE_PRIVATE_KEY looks invalid — should start with -----BEGIN PRIVATE KEY-----");
   }
-
-  // Check for placeholder/default values
-  const placeholders = ["secret", "password", "changeme", "example", "replace", "your_", "<"];
-  for (const key of ["JWT_SECRET", "SESSION_SECRET"]) {
-    const val = process.env[key].toLowerCase();
-    if (placeholders.some(p => val.includes(p))) {
-      warnings.push(`${key} looks like a placeholder — use a real random secret.`);
-    }
+  if (process.env.FIREBASE_PROJECT_ID.trim() !== process.env.FIREBASE_PROJECT_ID) {
+    warnings.push("FIREBASE_PROJECT_ID has leading/trailing spaces — remove them.");
+  }
+  if (process.env.FIREBASE_CLIENT_EMAIL.trim() !== process.env.FIREBASE_CLIENT_EMAIL) {
+    warnings.push("FIREBASE_CLIENT_EMAIL has leading/trailing spaces — remove them.");
   }
 
-  // In production, enforce strict rules
+  // ── Production checks ────────────────────────────────────────────────────
   if (process.env.NODE_ENV === "production") {
     if (!process.env.CLIENT_URL.startsWith("https://")) {
       warnings.push("CLIENT_URL must use HTTPS in production.");
@@ -61,16 +53,14 @@ const validateEnv = () => {
   }
 
   if (warnings.length) {
-    console.warn("\n⚠️  SECURITY WARNINGS:\n");
+    console.warn("\n⚠️  CONFIGURATION WARNINGS:\n");
     warnings.forEach(w => console.warn(`  ⚠  ${w}`));
     console.warn("");
-    // Don't exit on warnings — just alert
   }
 
   console.log("✅ Environment validated.");
 };
 
-// ── Helper: generate a secure secret (run once to get values for .env) ────
 const generateSecret = () => crypto.randomBytes(64).toString("hex");
 
 module.exports = { validateEnv, generateSecret };

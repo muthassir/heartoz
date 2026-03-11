@@ -1,6 +1,8 @@
-// client/src/hooks/useAuth.jsx
+// client/src/hooks/useAuth.js
 import { useState, useEffect, createContext, useContext } from "react";
-import { getMe, logout as apiLogout } from "../lib/api";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth, signInWithGoogle, firebaseSignOut } from "../lib/firebase";
+import { syncUser } from "../lib/api";
 
 const AuthContext = createContext(null);
 
@@ -9,29 +11,61 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("az_token");
-    if (!token) { setLoading(false); return; }
-    getMe()
-      .then(res => setUser(res.data))
-      .catch(() => localStorage.removeItem("az_token"))
-      .finally(() => setLoading(false));
-  }, []);
-  
-  const API = "https://heartoz.onrender.com/api"
-    // const API = "http://localhost:5000/api"
+    // Firebase automatically restores session on page refresh
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          // Get fresh Firebase token and sync user to our backend
+          const token = await firebaseUser.getIdToken();
+          localStorage.setItem("az_token", token);
+          const res = await syncUser();
+          setUser(res.data);
+        } catch (err) {
+          console.error("Auth sync failed", err);
+          setUser(null);
+          localStorage.removeItem("az_token");
+        }
+      } else {
+        setUser(null);
+        localStorage.removeItem("az_token");
+      }
+      setLoading(false);
+    });
 
-  const loginWithGoogle = () => {
-    window.location.href = `${API}/auth/google`;
+    return () => unsubscribe();
+  }, []);
+
+  const loginWithGoogle = async () => {
+    try {
+      const result = await signInWithGoogle();
+      const token  = await result.user.getIdToken();
+      localStorage.setItem("az_token", token);
+      const res = await syncUser();
+      setUser(res.data);
+    } catch (err) {
+      console.error("Google login failed", err);
+      throw err;
+    }
   };
 
   const logout = async () => {
-    await apiLogout().catch(() => {});
-    localStorage.removeItem("az_token");
-    setUser(null);
+    try {
+      await firebaseSignOut();
+      localStorage.removeItem("az_token");
+      setUser(null);
+    } catch (err) {
+      console.error("Logout failed", err);
+    }
   };
 
   const refreshUser = async () => {
-    const res = await getMe();
+    // Refresh Firebase token in case it expired
+    const firebaseUser = auth.currentUser;
+    if (firebaseUser) {
+      const token = await firebaseUser.getIdToken(true); // force refresh
+      localStorage.setItem("az_token", token);
+    }
+    const res = await syncUser();
     setUser(res.data);
     return res.data;
   };

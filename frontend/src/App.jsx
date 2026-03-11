@@ -4,7 +4,6 @@ import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
 import LoginPage   from "./pages/LoginPage";
 import PairPage    from "./pages/PairPage";
-import AuthCallback from "./pages/AuthCallback";
 import * as API    from "./lib/api";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -572,7 +571,7 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/auth/callback" element={<AuthCallback />} />
+      {/* <Route path="/auth/callback" element={<AuthCallback />} /> */}
       <Route path="/login" element={!user ? <LoginPage /> : <Navigate to="/" />} />
       <Route path="/" element={
         !user ? <Navigate to="/login" /> :
