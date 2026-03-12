@@ -48,7 +48,6 @@ router.patch("/:coupleId/dates/:letter",
       const { letter } = req.params;
       const { done, doneAt } = req.body;
 
-      // Validate photo separately (large payload)
       let photo = req.body.photo;
       if (photo !== undefined) {
         if (photo !== null && typeof photo !== "string") {
@@ -62,7 +61,7 @@ router.patch("/:coupleId/dates/:letter",
         }
       }
 
-      const couple   = await Couple.findById(req.params.coupleId);
+      const couple = await Couple.findById(req.params.coupleId);
       if (!couple) return res.status(404).json({ message: "Couple not found." });
 
       const existing = couple.dates.get(letter) || {};
@@ -92,7 +91,6 @@ router.post("/:coupleId/buckets",
       const couple = await Couple.findById(req.params.coupleId);
       if (!couple) return res.status(404).json({ message: "Couple not found." });
 
-      // Limit: max 200 bucket items per couple
       if (couple.buckets.length >= 200) {
         return res.status(400).json({ message: "Bucket list is full (max 200 items)." });
       }
@@ -123,7 +121,6 @@ router.patch("/:coupleId/buckets/:bucketId",
       const bucket = couple.buckets.id(req.params.bucketId);
       if (!bucket) return res.status(404).json({ message: "Bucket item not found." });
 
-      // Only allow specific fields to be updated (whitelist)
       const allowed = ["title","category","priority","note","done"];
       allowed.forEach(field => {
         if (req.body[field] !== undefined) bucket[field] = req.body[field];
@@ -162,7 +159,7 @@ router.delete("/:coupleId/buckets/:bucketId",
 
 // ── POST /api/couples/:coupleId/memories ───────────────────────────────────
 router.post("/:coupleId/memories",
-  uploadLimiter,               // Stricter limit for image uploads
+  uploadLimiter,
   validateCoupleId, validateMemory, handleValidation,
   coupleGuard,
   async (req, res) => {
@@ -170,7 +167,6 @@ router.post("/:coupleId/memories",
       const couple = await Couple.findById(req.params.coupleId);
       if (!couple) return res.status(404).json({ message: "Couple not found." });
 
-      // Limit: max 500 memories per couple
       if (couple.memories.length >= 500) {
         return res.status(400).json({ message: "Memory limit reached (max 500)." });
       }
@@ -246,7 +242,6 @@ router.patch("/:coupleId/scores",
     try {
       const { userId, points } = req.body;
 
-      // Validate userId is a couple member — prevent score manipulation
       if (!userId || typeof userId !== "string") {
         return res.status(422).json({ message: "Invalid userId." });
       }
@@ -257,14 +252,10 @@ router.patch("/:coupleId/scores",
       const couple = await Couple.findById(req.params.coupleId);
       if (!couple) return res.status(404).json({ message: "Couple not found." });
 
-      // Ensure userId is actually a member of this couple
       const isMember = couple.members.some(m => m.toString() === userId);
       if (!isMember) {
         logger.security("Score manipulation attempt", {
-          ip:      req.ip,
-          userId:  req.user._id,
-          target:  userId,
-          coupleId: req.params.coupleId,
+          ip: req.ip, userId: req.user._id, target: userId, coupleId: req.params.coupleId,
         });
         return res.status(403).json({ message: "User is not a couple member." });
       }
@@ -277,6 +268,59 @@ router.patch("/:coupleId/scores",
     } catch (err) {
       logger.error("Update score error", { error: err.message });
       res.status(500).json({ message: "Failed to update score." });
+    }
+  }
+);
+
+// ── PATCH /api/couples/:coupleId/ideas/fav ─────────────────────────────────
+router.patch("/:coupleId/ideas/fav",
+  writeLimiter,
+  validateCoupleId, handleValidation,
+  coupleGuard,
+  async (req, res) => {
+    try {
+      const { ideaId } = req.body;
+      if (!ideaId || typeof ideaId !== "string") {
+        return res.status(422).json({ message: "Invalid ideaId." });
+      }
+      const couple = await Couple.findById(req.params.coupleId);
+      if (!couple) return res.status(404).json({ message: "Couple not found." });
+
+      const idx = couple.ideaFavs.indexOf(ideaId);
+      if (idx === -1) couple.ideaFavs.push(ideaId);
+      else            couple.ideaFavs.splice(idx, 1);
+
+      await couple.save();
+      res.json({ ideaFavs: couple.ideaFavs });
+    } catch (err) {
+      logger.error("Toggle idea fav error", { error: err.message });
+      res.status(500).json({ message: "Failed to update." });
+    }
+  }
+);
+
+// ── PATCH /api/couples/:coupleId/ideas/done ────────────────────────────────
+router.patch("/:coupleId/ideas/done",
+  writeLimiter,
+  validateCoupleId, handleValidation,
+  coupleGuard,
+  async (req, res) => {
+    try {
+      const { ideaId } = req.body;
+      if (!ideaId || typeof ideaId !== "string") {
+        return res.status(422).json({ message: "Invalid ideaId." });
+      }
+      const couple = await Couple.findById(req.params.coupleId);
+      if (!couple) return res.status(404).json({ message: "Couple not found." });
+
+      if (!couple.ideaDone.includes(ideaId)) {
+        couple.ideaDone.push(ideaId);
+        await couple.save();
+      }
+      res.json({ ideaDone: couple.ideaDone });
+    } catch (err) {
+      logger.error("Toggle idea done error", { error: err.message });
+      res.status(500).json({ message: "Failed to update." });
     }
   }
 );

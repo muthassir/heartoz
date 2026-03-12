@@ -35,7 +35,7 @@ api.interceptors.response.use(
 export default api;
 
 // ── Auth ───────────────────────────────────────────────────────────────────
-export const syncUser  = ()      => api.post("/auth/sync");   // replaces /auth/me
+export const syncUser  = ()      => api.post("/auth/sync");  
 export const getMe     = ()      => api.get("/auth/me");
 export const logout    = ()      => api.post("/auth/logout");
 
@@ -64,3 +64,6 @@ export const deleteMemory = (coupleId, id)       => api.delete(`/couples/${coupl
 // Scores
 export const addScore = (coupleId, userId, points) =>
   api.patch(`/couples/${coupleId}/scores`, { userId, points });
+
+export const toggleIdeaFav  = (coupleId, ideaId) => api.patch(`/couples/${coupleId}/ideas/fav`,  { ideaId });
+export const toggleIdeaDone = (coupleId, ideaId) => api.patch(`/couples/${coupleId}/ideas/done`, { ideaId });
