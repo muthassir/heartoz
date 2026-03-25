@@ -65,5 +65,16 @@ export const deleteMemory = (coupleId, id)       => api.delete(`/couples/${coupl
 export const addScore = (coupleId, userId, points) =>
   api.patch(`/couples/${coupleId}/scores`, { userId, points });
 
+// Games (Truth/Dare)
+export const submitTruth = (coupleId, truthPrompt, text) =>
+  api.post(`/couples/${coupleId}/games/truth`, { truthPrompt, text });
+
+export const submitDare = (coupleId, darePrompt, video) =>
+  api.post(`/couples/${coupleId}/games/dare`, { darePrompt, video });
+
+// decision: "done" | "skip"
+export const reviewGame = (coupleId, decision) =>
+  api.post(`/couples/${coupleId}/games/review`, { decision });
+
 export const toggleIdeaFav  = (coupleId, ideaId) => api.patch(`/couples/${coupleId}/ideas/fav`,  { ideaId });
 export const toggleIdeaDone = (coupleId, ideaId) => api.patch(`/couples/${coupleId}/ideas/done`, { ideaId });

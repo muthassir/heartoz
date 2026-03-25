@@ -47,7 +47,7 @@ app.use(helmet({
       connectSrc:  ["'self'"],
       fontSrc:     ["'self'"],
       objectSrc:   ["'none'"],
-      mediaSrc:    ["'self'"],
+      mediaSrc:    ["'self'", "data:"],
       frameSrc:    ["'none'"],
       upgradeInsecureRequests: isProd ? [] : null,
     },
@@ -95,7 +95,8 @@ app.use((req, res, next) => {
     (req.method === "PATCH" && /\/dates\/[A-Z]$/.test(req.path)) ||
     (req.method === "POST"  && req.path.endsWith("/memories"))    ||
     (req.method === "PATCH" && /\/memories\//.test(req.path));
-  express.json({ limit: isImageRoute ? "8mb" : "50kb" })(req, res, next);
+  const isGameVideoRoute = req.method === "POST" && /\/games\/dare$/.test(req.path);
+  express.json({ limit: isGameVideoRoute ? "25mb" : isImageRoute ? "8mb" : "50kb" })(req, res, next);
 });
 app.use(express.urlencoded({ extended: false, limit: "50kb" }));
 

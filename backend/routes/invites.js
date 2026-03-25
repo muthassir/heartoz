@@ -70,6 +70,18 @@ router.post("/join", protect, inviteLimiter, validateInviteJoin, handleValidatio
           [realInvite.createdBy.toString()]: 0,
           [req.user._id.toString()]:         0,
         },
+        game: {
+          turnUserId: realInvite.createdBy.toString(),
+          pending: {
+            type: null,
+            fromUserId: null,
+            toUserId: null,
+            truthPrompt: "",
+            truthText: "",
+            darePrompt: "",
+            dareVideo: null,
+          },
+        },
       });
 
       // Update both users — use separate saves to avoid $in with sanitizeFilter

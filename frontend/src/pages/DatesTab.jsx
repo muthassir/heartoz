@@ -7,16 +7,6 @@ export default function DatesTab({
   togglingDate, uploadingDate,
   onToggle, onPhoto,
 }) {
-  const dateFileRef = useRef();
-  const [selected, setSelected] = [
-    /* lifted to parent via props */ null, () => {},
-  ];
-
-  const totalDone = Object.values(dates).filter(d => d.done).length;
-
-  // selected / modal state lives here
-  const [sel, setSel] = [null, () => {}]; // placeholder — see below
-
   return (
     <_DatesTabInner
       dates={dates} coupleId={coupleId} user={user}
@@ -26,32 +16,134 @@ export default function DatesTab({
   );
 }
 
-// Inner with its own local state
 import { useState } from "react";
-import * as API from "../lib/api";
 
 function Spinner() {
   return <span style={{display:"inline-block",width:"14px",height:"14px",border:"2px solid rgba(255,255,255,0.4)",borderTopColor:"white",borderRadius:"50%",animation:"spin 0.7s linear infinite",verticalAlign:"middle",marginRight:"6px"}}/>;
 }
 
 function _DatesTabInner({ dates, coupleId, togglingDate, uploadingDate, onToggle, onPhoto }) {
-  const [selected,  setSelected]  = useState(null);
-  const [lightbox,  setLightbox]  = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [lightbox, setLightbox] = useState(null);
   const dateFileRef = useRef();
 
-  const idea = selected ? DATE_IDEAS[selected] : null;
+  const idea     = selected ? DATE_IDEAS[selected] : null;
   const totalDone = Object.values(dates).filter(d => d.done).length;
 
   return (
     <div className="max-w-2xl mx-auto px-3 py-5">
-      <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}} @keyframes hf{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}} .hf{animation:hf 3s ease-in-out infinite;} .lc{transition:all 0.25s cubic-bezier(0.34,1.56,0.64,1);} .lc:hover{transform:translateY(-4px) scale(1.04);} .mo{animation:fadeIn 0.2s ease;} .mb{animation:slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1);} @keyframes fadeIn{from{opacity:0}to{opacity:1}} @keyframes slideUp{from{opacity:0;transform:translateY(40px) scale(0.96)}to{opacity:1;transform:translateY(0) scale(1)}}`}</style>
+      <style>{`
+        @keyframes spin    { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+        @keyframes hf      { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+        @keyframes fadeIn  { from{opacity:0} to{opacity:1} }
+        @keyframes slideUp { from{opacity:0;transform:translateY(40px) scale(0.96)} to{opacity:1;transform:translateY(0) scale(1)} }
+        @keyframes tilt    { 0%,100%{transform:rotate(var(--r)) translateY(0)} 50%{transform:rotate(var(--r)) translateY(-4px)} }
+
+        .hf  { animation: hf 3s ease-in-out infinite; }
+        .mo  { animation: fadeIn 0.2s ease; }
+        .mb  { animation: slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1); }
+
+        /* Polaroid card */
+        .polaroid {
+          background: white;
+          border-radius: 4px;
+          padding: 6px 6px 22px;
+          box-shadow: 0 3px 12px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08);
+          cursor: pointer;
+          transition: transform 0.22s cubic-bezier(0.34,1.4,0.64,1), box-shadow 0.22s;
+          position: relative;
+        }
+        .polaroid:hover {
+          transform: rotate(0deg) translateY(-6px) scale(1.06) !important;
+          box-shadow: 0 14px 36px rgba(244,63,94,0.22), 0 4px 12px rgba(0,0,0,0.1);
+          z-index: 10;
+        }
+        .polaroid.done {
+          box-shadow: 0 4px 20px rgba(244,63,94,0.35), 0 1px 4px rgba(0,0,0,0.08);
+        }
+        .polaroid .photo-area {
+          width: 100%;
+          aspect-ratio: 1;
+          overflow: hidden;
+          border-radius: 2px;
+          background: #fdf2f2;
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .polaroid .caption {
+          margin-top: 6px;
+          text-align: center;
+          font-size: 9px;
+          color: #6b7280;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          font-family: 'Caveat', cursive;
+          letter-spacing: 0.2px;
+        }
+        .polaroid.done .caption { color: #f43f5e; font-weight: 700; }
+        .polaroid .letter-badge {
+          position: absolute;
+          top: 4px; left: 4px;
+          width: 18px; height: 18px;
+          border-radius: 50%;
+          background: linear-gradient(135deg,#f43f5e,#ec4899);
+          color: white;
+          font-size: 9px;
+          font-weight: 700;
+          display: flex; align-items: center; justify-content: center;
+          box-shadow: 0 1px 4px rgba(244,63,94,0.4);
+          font-family: 'Playfair Display', serif;
+        }
+        .polaroid.done .letter-badge {
+          background: white;
+          color: #f43f5e;
+          border: 1px solid #fda4af;
+        }
+        .polaroid .done-ribbon {
+          position: absolute;
+          bottom: 4px; right: 4px;
+          font-size: 13px;
+          filter: drop-shadow(0 1px 2px rgba(0,0,0,0.15));
+        }
+
+        /* tape strip on top */
+        .polaroid::before {
+          content: '';
+          position: absolute;
+          top: -7px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 28px; height: 14px;
+          background: rgba(255,220,100,0.65);
+          border-radius: 2px;
+          box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);
+        }
+
+        /* subtle pinhole */
+        .polaroid::after {
+          content: '';
+          position: absolute;
+          top: 4px; right: 4px;
+          width: 4px; height: 4px;
+          border-radius: 50%;
+          background: rgba(0,0,0,0.08);
+        }
+
+        /* grid masonry feel — slight tilts */
+        .polaroid:nth-child(3n)   { --r: 1.2deg;  transform: rotate(1.2deg); }
+        .polaroid:nth-child(3n+1) { --r: -1.5deg; transform: rotate(-1.5deg); }
+        .polaroid:nth-child(3n+2) { --r: 0.6deg;  transform: rotate(0.6deg); }
+      `}</style>
 
       {/* Lightbox */}
       {lightbox && (
-        <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 mo" onClick={() => setLightbox(null)}>
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 mo" onClick={() => setLightbox(null)}>
           <div className="relative max-w-lg w-full">
             <img src={lightbox} alt="" className="w-full rounded-2xl max-h-[80vh] object-contain shadow-2xl"/>
-            <button className="absolute top-2 right-2 w-8 h-8 bg-white/20 hover:bg-white/40 rounded-full text-white" onClick={() => setLightbox(null)}>✕</button>
+            <button className="absolute top-2 right-2 w-8 h-8 bg-white/20 hover:bg-white/40 rounded-full text-white text-sm" onClick={() => setLightbox(null)}>✕</button>
           </div>
         </div>
       )}
@@ -89,33 +181,80 @@ function _DatesTabInner({ dates, coupleId, togglingDate, uploadingDate, onToggle
         </div>
       )}
 
-      {/* Grid */}
-      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
+      {/* Polaroid Grid */}
+      <div style={{
+        display:"grid",
+        gridTemplateColumns:"repeat(auto-fill, minmax(120px, 1fr))",
+        gap:"20px 14px",
+        padding:"20px 8px 8px",
+      }}>
         {ALPHABET.map(letter => {
-          const item = DATE_IDEAS[letter]; const d = dates[letter] || {}; const done = d.done; const hasPhoto = !!d.photo;
+          const item     = DATE_IDEAS[letter];
+          const d        = dates[letter] || {};
+          const done     = d.done;
+          const hasPhoto = !!d.photo;
+
           return (
-            <div key={letter} className="lc cursor-pointer" onClick={() => setSelected(letter)}>
-              <div className={`relative rounded-2xl overflow-hidden border-2 aspect-square flex flex-col items-center justify-center ${done ? "border-rose-300 bg-gradient-to-br from-rose-400 to-pink-500 shadow-lg shadow-rose-200" : "border-rose-100 bg-white hover:border-rose-200 hover:shadow-md"}`}>
-                {hasPhoto && <div className="absolute inset-0"><img src={d.photo} alt="" className={`w-full h-full object-cover ${done ? "opacity-30" : "opacity-20"}`}/></div>}
-                <div className="relative z-10 text-center p-1">
-                  <div className={`font-bold text-xl leading-none ${done ? "text-white" : "text-gray-700"}`} style={{fontFamily:"'Playfair Display',serif"}}>{letter}</div>
-                  <div className="text-lg leading-none mt-0.5">{item.emoji}</div>
-                  {done && <div className="text-white text-xs mt-1">✓</div>}
-                  {hasPhoto && !done && <div className="text-rose-400 text-xs">📸</div>}
-                </div>
+            <div
+              key={letter}
+              className={`polaroid${done?" done":""}`}
+              onClick={() => setSelected(letter)}
+            >
+              {/* Photo area */}
+              <div className="photo-area">
+                {hasPhoto
+                  ? <img src={d.photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+                  : <div style={{textAlign:"center"}}>
+                      <div style={{
+                        fontSize:"clamp(22px,5vw,30px)",
+                        filter: done ? "saturate(1.2)" : "saturate(0.8) opacity(0.7)",
+                      }}>{item.emoji}</div>
+                    </div>
+                }
+
+                {/* Done overlay tint */}
+                {done && (
+                  <div style={{
+                    position:"absolute", inset:0,
+                    background:"linear-gradient(135deg,rgba(244,63,94,0.15),rgba(236,72,153,0.1))",
+                  }}/>
+                )}
+
+                {/* Letter badge */}
+                <div className="letter-badge">{letter}</div>
+
+                {/* Done ribbon */}
+                {done && <div className="done-ribbon">💕</div>}
+
+                {/* Photo indicator */}
+                {hasPhoto && !done && (
+                  <div style={{
+                    position:"absolute", bottom:"3px", right:"3px",
+                    fontSize:"9px", background:"rgba(255,255,255,0.85)",
+                    borderRadius:"4px", padding:"1px 3px",
+                    color:"#f43f5e",
+                  }}>📸</div>
+                )}
               </div>
-              <p className={`text-center text-[9px] sm:text-[10px] mt-1 leading-tight px-0.5 ${done ? "text-rose-500 font-semibold" : "text-gray-400"}`}>{item.idea.split(" ").slice(0,2).join(" ")}</p>
+
+              {/* Caption */}
+              <div className="caption">
+                {done
+                  ? `✓ ${item.idea.split(" ").slice(0,2).join(" ")}`
+                  : item.idea.split(" ").slice(0,2).join(" ")
+                }
+              </div>
             </div>
           );
         })}
       </div>
 
       {/* Stats */}
-      <div className="mt-6 grid grid-cols-3 gap-3">
+      <div className="bg-pink-800 p-2 rounded mt-8 grid grid-cols-3 gap-3">
         {[
-          {label:"Dates Done",  value:totalDone,                                            emoji:"💕", g:"from-rose-400 to-pink-500"},
-          {label:"Photos",      value:Object.values(dates).filter(d=>d.photo).length,       emoji:"📸", g:"from-orange-400 to-rose-400"},
-          {label:"To Go",       value:26-totalDone,                                         emoji:"✨", g:"from-pink-400 to-purple-400"},
+          { label:"Dates Done", value:totalDone,                                      emoji:"💕", g:"from-rose-400 to-pink-500"   },
+          { label:"Photos",     value:Object.values(dates).filter(d=>d.photo).length, emoji:"📸", g:"from-orange-400 to-rose-400" },
+          { label:"To Go",      value:26-totalDone,                                   emoji:"✨", g:"from-pink-400 to-purple-400"  },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-2xl p-3 border border-rose-100 text-center shadow-sm">
             <div className="text-xl">{s.emoji}</div>

@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import RainingHearts from "../components/Raininghearts";
 import GoogleSignInButton from "../components/GoogleSignInButton";
+import logo from "../assets/logo1.jpg"
 
 const problems = [
   {
@@ -244,7 +245,9 @@ export default function About({ onBack }) {
             transition:"opacity 0.7s ease",
           }}
         >
-          <div className="float-anim" style={{fontSize:"clamp(48px,12vw,64px)", marginBottom:"10px"}}>💑</div>
+          <div className="float-anim" style={{fontSize:"clamp(48px,12vw,64px)", marginBottom:"10px"}}>
+            <img src={logo} alt="heartoz_logo" className="rounded-[40%]" />
+          </div>
           <h1 className="df shimmer-title" style={{fontSize:"clamp(32px,8vw,44px)", fontWeight:700, margin:"0 0 8px"}}>HeartOZ</h1>
           <p className="df" style={{color:"#fb7185", fontSize:"14px", fontStyle:"italic", letterSpacing:"1px", margin:"0 0 16px"}}>
             your couple's private world

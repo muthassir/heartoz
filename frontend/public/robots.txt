@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Allow: /about
+
+Disallow: /login
+Disallow: /api/
+
+Sitemap: https://heartoz.netlify.app/sitemap.xmls

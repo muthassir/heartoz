@@ -12,6 +12,7 @@ export default function MemoriesTab({
   onAdd, onDelete,
 }) {
   const [showForm,       setShowForm]       = useState(false);
+  const [viewMode,       setViewMode]       = useState("grid"); // grid | timeline
   const [form,           setForm]           = useState({title:"",date:new Date().toISOString().split("T")[0],note:"",tag:"Just Because",mood:"🥰",imageUrl:null,imagePreview:null});
   const [expandedMemory, setExpandedMemory] = useState(null);
   const [memoryLightbox, setMemoryLightbox] = useState(null);
@@ -36,24 +37,199 @@ export default function MemoriesTab({
 
   return (
     <div className="max-w-2xl mx-auto px-3 py-5 space-y-4">
-      <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}} @keyframes slideIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}} .si{animation:slideIn 0.35s cubic-bezier(0.34,1.56,0.64,1) both;} .mb{animation:slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1);} @keyframes slideUp{from{opacity:0;transform:translateY(40px) scale(0.96)}to{opacity:1;transform:translateY(0) scale(1)}} .mo{animation:fadeIn 0.2s ease;} @keyframes fadeIn{from{opacity:0}to{opacity:1}} .tl{position:relative;} .tl::before{content:'';position:absolute;left:20px;top:0;bottom:0;width:2px;background:linear-gradient(180deg,#fda4af,#fbcfe8,transparent);border-radius:2px;}`}</style>
+      <style>{`
+        @keyframes spin    { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+        @keyframes slideIn { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes slideUp { from{opacity:0;transform:translateY(40px) scale(0.96)} to{opacity:1;transform:translateY(0) scale(1)} }
+        @keyframes fadeIn  { from{opacity:0} to{opacity:1} }
+        @keyframes floatUp { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
+        .si  { animation: slideIn 0.35s cubic-bezier(0.34,1.56,0.64,1) both; }
+        .mb  { animation: slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1); }
+        .mo  { animation: fadeIn  0.2s ease; }
+
+        /* ── Polaroid memory card ── */
+        .mem-polaroid {
+          background: white;
+          border-radius: 3px;
+          padding: 8px 8px 48px;
+          box-shadow: 0 4px 18px rgba(0,0,0,0.13), 0 1px 4px rgba(0,0,0,0.07);
+          position: relative;
+          transition: transform 0.25s cubic-bezier(0.34,1.4,0.64,1), box-shadow 0.25s;
+          cursor: pointer;
+          width: 100%;
+        }
+        .mem-polaroid:hover {
+          transform: translateY(-6px) scale(1.015) rotate(0deg) !important;
+          box-shadow: 0 18px 45px rgba(244,63,94,0.2), 0 4px 14px rgba(0,0,0,0.1);
+          z-index: 5;
+        }
+
+        /* tape strip */
+        .mem-polaroid::before {
+          content: '';
+          position: absolute;
+          top: -9px; left: 50%;
+          transform: translateX(-50%);
+          width: 52px; height: 16px;
+          background: rgba(255,220,100,0.6);
+          border-radius: 3px;
+          box-shadow: inset 0 1px 3px rgba(0,0,0,0.08);
+        }
+
+        /* slight tilt alternating */
+        .mem-polaroid:nth-child(odd)  { transform: rotate(-1.2deg); }
+        .mem-polaroid:nth-child(even) { transform: rotate(1deg); }
+
+        .mem-photo {
+          width: 100%;
+          aspect-ratio: 4/3;
+          overflow: hidden;
+          border-radius: 2px;
+          background: linear-gradient(135deg,#fff1f2,#fdf4ff);
+          position: relative;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .mem-photo img {
+          width: 100%; height: 100%; object-fit: cover;
+          display: block;
+          transition: transform 0.4s ease;
+        }
+        .mem-polaroid:hover .mem-photo img { transform: scale(1.04); }
+
+        .mem-caption-area {
+          padding: 0;
+          position: absolute;
+          bottom: 0; left: 0; right: 0;
+          height: 48px;
+          display: flex; flex-direction: column;
+          align-items: center; justify-content: center;
+          gap: 2px;
+          padding: 0 8px;
+        }
+        .mem-caption-title {
+          font-size: 11px;
+          font-weight: 700;
+          color: #374151;
+          text-align: center;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          width: 100%;
+          font-family: 'Playfair Display', serif;
+        }
+        .mem-caption-meta {
+          font-size: 9px;
+          color: #9ca3af;
+          text-align: center;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          width: 100%;
+        }
+
+        /* mood badge */
+        .mem-mood {
+          position: absolute;
+          top: 6px; left: 6px;
+          width: 22px; height: 22px;
+          border-radius: 50%;
+          background: white;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 12px;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        }
+        /* tag badge */
+        .mem-tag {
+          position: absolute;
+          top: 6px; right: 6px;
+          font-size: 8px;
+          background: rgba(255,255,255,0.9);
+          color: #f43f5e;
+          padding: 2px 6px;
+          border-radius: 8px;
+          font-weight: 700;
+          backdrop-filter: blur(4px);
+        }
+        /* delete btn */
+        .mem-delete {
+          position: absolute;
+          bottom: 50px; right: 6px;
+          width: 20px; height: 20px;
+          border-radius: 50%;
+          background: rgba(255,255,255,0.9);
+          border: none; cursor: pointer;
+          font-size: 9px; color: #d1d5db;
+          display: flex; align-items: center; justify-content: center;
+          transition: all 0.18s;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+        }
+        .mem-delete:hover { background: #fee2e2; color: #ef4444; }
+
+        /* expanded detail panel */
+        .mem-detail {
+          background: white;
+          border-radius: 20px;
+          border: 1px solid #fce7f3;
+          padding: 16px;
+          box-shadow: 0 4px 20px rgba(244,63,94,0.08);
+          animation: slideIn 0.3s cubic-bezier(0.34,1.4,0.64,1);
+        }
+        /* ── Timeline ── */
+        .tl-line { position:relative; }
+        .tl-line::before {
+          content:''; position:absolute;
+          left: 18px; top:0; bottom:0; width:2px;
+          background: linear-gradient(180deg,#fda4af,#fbcfe8,#e9d5ff,transparent);
+          border-radius:2px;
+        }
+        .tl-item { position:relative; padding-left:52px; }
+        .tl-dot {
+          position:absolute; left:8px; top:16px;
+          width:22px; height:22px; border-radius:50%;
+          background:white; border:2px solid #fda4af;
+          display:flex; align-items:center; justify-content:center;
+          font-size:11px; z-index:2;
+          box-shadow:0 2px 8px rgba(244,63,94,0.15);
+        }
+        .tl-card {
+          background:white; border-radius:16px;
+          border:1px solid #fce7f3;
+          overflow:hidden;
+          box-shadow:0 3px 14px rgba(244,63,94,0.07);
+          transition:transform 0.2s, box-shadow 0.2s;
+        }
+        .tl-card:hover {
+          transform:translateY(-2px);
+          box-shadow:0 8px 28px rgba(244,63,94,0.13);
+        }
+        .tl-year-label {
+          display:inline-block;
+          margin-left:52px; margin-bottom:8px;
+          font-size:10px; font-weight:700; letter-spacing:1px;
+          color:#fda4af; text-transform:uppercase;
+          background:#fff1f2; padding:3px 10px; border-radius:10px;
+          border:1px solid #fce7f3;
+        }
+      `}</style>
 
       {/* Lightbox */}
       {memoryLightbox && (
-        <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 mo" onClick={() => setMemoryLightbox(null)}>
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 mo" onClick={() => setMemoryLightbox(null)}>
           <div className="relative max-w-lg w-full">
             <img src={memoryLightbox} alt="" className="w-full rounded-2xl max-h-[80vh] object-contain shadow-2xl"/>
-            <button className="absolute top-2 right-2 w-8 h-8 bg-white/20 hover:bg-white/40 rounded-full text-white" onClick={() => setMemoryLightbox(null)}>✕</button>
+            <button className="absolute top-2 right-2 w-8 h-8 bg-white/20 hover:bg-white/40 rounded-full text-white text-sm" onClick={() => setMemoryLightbox(null)}>✕</button>
           </div>
         </div>
       )}
 
       <input ref={memImgRef} type="file" accept="image/*" className="hidden" onChange={e => handleImage(e.target.files[0])}/>
 
+      {/* Add button */}
       <button onClick={() => setShowForm(p => !p)} className="w-full py-3 rounded-2xl border-2 border-dashed border-rose-200 hover:border-rose-400 text-rose-400 text-sm font-semibold flex items-center justify-center gap-2 bg-white hover:bg-rose-50 transition-all">
         {showForm ? "✕ Cancel" : "＋ Add a Memory"}
       </button>
 
+      {/* Add form — unchanged */}
       {showForm && (
         <div className="bg-white rounded-2xl border border-rose-100 shadow-md p-4 space-y-3 mb">
           <h3 className="text-lg font-bold text-gray-800" style={{fontFamily:"'Playfair Display',serif"}}>📸 Capture a Memory</h3>
@@ -81,12 +257,12 @@ export default function MemoriesTab({
         </div>
       )}
 
-      {/* Stats */}
+      {/* Stats — unchanged */}
       <div className="grid grid-cols-3 gap-2">
         {[
-          {label:"Memories",   value:memories.length,                                              emoji:"📸"},
-          {label:"With Photos",value:memories.filter(m=>m.imageUrl).length,                       emoji:"🖼️"},
-          {label:"This Year",  value:memories.filter(m=>m.date?.startsWith(new Date().getFullYear())).length, emoji:"🌸"},
+          {label:"Memories",    value:memories.length,                                                                        emoji:"📸"},
+          {label:"With Photos", value:memories.filter(m=>m.imageUrl).length,                                                 emoji:"🖼️"},
+          {label:"This Year",   value:memories.filter(m=>m.date?.startsWith(new Date().getFullYear())).length,               emoji:"🌸"},
         ].map(s => (
           <div key={s.label} className="bg-white rounded-xl p-2.5 border border-rose-100 text-center shadow-sm">
             <div className="text-lg">{s.emoji}</div>
@@ -96,51 +272,175 @@ export default function MemoriesTab({
         ))}
       </div>
 
-      {memories.length === 0
-        ? <div className="text-center py-16"><div className="text-5xl mb-3">📷</div><p className="text-rose-300 italic" style={{fontFamily:"'Playfair Display',serif"}}>Your story starts here.</p></div>
-        : (
-          <div className="tl space-y-4 pl-2 pt-2">
-            {sortedMemories.map((mem, i) => (
-              <div key={mem._id} className="si pl-10 relative" style={{animationDelay:`${i*60}ms`}}>
-                <div className="absolute left-3 top-4 w-5 h-5 rounded-full bg-white border-2 border-rose-300 flex items-center justify-center text-xs shadow-sm z-10">{mem.mood}</div>
-                <div className={`bg-white rounded-2xl border border-rose-100 shadow-sm overflow-hidden ${expandedMemory===mem._id ? "border-rose-200 shadow-md" : ""}`}>
-                  {mem.imageUrl && (
-                    <div className="relative h-36 overflow-hidden cursor-zoom-in" onClick={() => setMemoryLightbox(mem.imageUrl)}>
-                      <img src={mem.imageUrl} alt={mem.title} className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"/>
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent"/>
-                    </div>
-                  )}
-                  <div className="p-3.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 flex-wrap mb-1">
-                          <span className="text-xs px-2 py-0.5 bg-rose-50 text-rose-400 rounded-full border border-rose-100">{mem.tag}</span>
-                          <span className="text-xs text-gray-400">📅 {mem.date ? new Date(mem.date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : ""}</span>
-                        </div>
-                        <h3 className="font-bold text-gray-800 text-sm" style={{fontFamily:"'Playfair Display',serif"}}>{mem.title}</h3>
+      {/* View toggle */}
+      {memories.length > 0 && (
+        <div style={{display:"flex",background:"#f9fafb",borderRadius:"14px",padding:"3px"}}>
+          {[{id:"grid",l:"📷 Grid"},{id:"timeline",l:"🕐 Timeline"}].map(v => (
+            <button key={v.id} onClick={() => setViewMode(v.id)} style={{
+              flex:1, padding:"8px", borderRadius:"11px", border:"none", cursor:"pointer",
+              fontSize:"12px", fontWeight:700, transition:"all 0.18s",
+              background: viewMode===v.id ? "white" : "transparent",
+              color: viewMode===v.id ? "#f43f5e" : "#9ca3af",
+              boxShadow: viewMode===v.id ? "0 1px 8px rgba(0,0,0,0.08)" : "none",
+            }}>{v.l}</button>
+          ))}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {memories.length === 0 && (
+        <div className="text-center py-16">
+          <div className="text-5xl mb-3">📷</div>
+          <p className="text-rose-300 italic" style={{fontFamily:"'Playfair Display',serif"}}>Your story starts here.</p>
+        </div>
+      )}
+
+      {/* ── Polaroid grid ── */}
+      {memories.length > 0 && viewMode === "grid" && (
+        <div style={{
+          display:"grid",
+          gridTemplateColumns:"repeat(auto-fill, minmax(140px, 1fr))",
+          gap:"28px 16px",
+          padding:"20px 4px 8px",
+        }}>
+          {sortedMemories.map((mem, i) => (
+            <div key={mem._id}>
+              {/* Polaroid card */}
+              <div
+                className={`mem-polaroid si`}
+                style={{animationDelay:`${i*55}ms`}}
+                onClick={() => setExpandedMemory(expandedMemory === mem._id ? null : mem._id)}
+              >
+                {/* Photo */}
+                <div className="mem-photo">
+                  {mem.imageUrl
+                    ? <img src={mem.imageUrl} alt={mem.title} onClick={e => { e.stopPropagation(); setMemoryLightbox(mem.imageUrl); }}/>
+                    : <div style={{textAlign:"center"}}>
+                        <div style={{fontSize:"32px",marginBottom:"4px",opacity:0.5}}>📸</div>
+                        <div style={{fontSize:"9px",color:"#fda4af"}}>No photo</div>
                       </div>
-                      <button onClick={() => onDelete(mem._id)} disabled={deletingMemory===mem._id} className="text-gray-200 hover:text-red-400 text-sm flex-shrink-0 disabled:opacity-40">
-                        {deletingMemory===mem._id
-                          ? <span style={{width:"10px",height:"10px",border:"2px solid #fca5a5",borderTopColor:"#ef4444",borderRadius:"50%",animation:"spin 0.7s linear infinite",display:"inline-block"}}/>
-                          : "✕"}
-                      </button>
-                    </div>
-                    {mem.note && (
-                      <div className={`mt-2 overflow-hidden transition-all ${expandedMemory===mem._id ? "max-h-40" : "max-h-10"}`}>
-                        <p className="text-xs text-gray-500 leading-relaxed italic">{mem.note}</p>
-                      </div>
-                    )}
-                    {mem.note && mem.note.length > 80 && (
-                      <button onClick={() => setExpandedMemory(expandedMemory===mem._id ? null : mem._id)} className="text-xs text-rose-400 mt-1">
-                        {expandedMemory===mem._id ? "Show less ↑" : "Read more ↓"}
-                      </button>
-                    )}
+                  }
+                  {/* Mood badge */}
+                  <div className="mem-mood">{mem.mood || "🥰"}</div>
+                  {/* Tag badge */}
+                  <div className="mem-tag">{mem.tag}</div>
+                </div>
+
+                {/* Caption area */}
+                <div className="mem-caption-area">
+                  <div className="mem-caption-title">{mem.title}</div>
+                  <div className="mem-caption-meta">
+                    {mem.date ? new Date(mem.date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : ""}
                   </div>
+                </div>
+
+                {/* Delete btn */}
+                <button
+                  className="mem-delete"
+                  onClick={e => { e.stopPropagation(); onDelete(mem._id); }}
+                  disabled={deletingMemory === mem._id}
+                >
+                  {deletingMemory === mem._id
+                    ? <span style={{width:"8px",height:"8px",border:"1.5px solid #fca5a5",borderTopColor:"#ef4444",borderRadius:"50%",animation:"spin 0.7s linear infinite",display:"inline-block"}}/>
+                    : "✕"}
+                </button>
+              </div>
+
+              {/* Expanded detail panel below the card */}
+              {expandedMemory === mem._id && mem.note && (
+                <div className="mem-detail mt-3">
+                  <p className="text-xs text-gray-500 leading-relaxed italic">"{mem.note}"</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {/* ── Timeline view ── */}
+      {memories.length > 0 && viewMode === "timeline" && (() => {
+        const grouped = {};
+        sortedMemories.forEach(mem => {
+          const yr = mem.date ? new Date(mem.date).getFullYear() : "Unknown";
+          if (!grouped[yr]) grouped[yr] = [];
+          grouped[yr].push(mem);
+        });
+        return (
+          <div className="tl-line" style={{paddingTop:"8px", paddingBottom:"24px"}}>
+            {Object.entries(grouped).map(([year, mems]) => (
+              <div key={year}>
+                {/* Year label */}
+                <div className="tl-year-label">📅 {year}</div>
+
+                <div style={{display:"flex", flexDirection:"column", gap:"28px", marginBottom:"28px"}}>
+                  {mems.map((mem, i) => (
+                    <div key={mem._id} className={`tl-item si`} style={{animationDelay:`${i*60}ms`}}>
+                      {/* dot */}
+                      <div className="tl-dot">{mem.mood || "🥰"}</div>
+
+                      {/* Polaroid card */}
+                      <div
+                        className="mem-polaroid"
+                        style={{
+                          transform: i%2===0 ? "rotate(-1deg)" : "rotate(1.2deg)",
+                          maxWidth: "260px",
+                        }}
+                        onClick={() => setExpandedMemory(expandedMemory===mem._id ? null : mem._id)}
+                      >
+                        {/* Photo area */}
+                        <div className="mem-photo">
+                          {mem.imageUrl
+                            ? <img src={mem.imageUrl} alt={mem.title}
+                                onClick={e => { e.stopPropagation(); setMemoryLightbox(mem.imageUrl); }}
+                              />
+                            : <div style={{textAlign:"center"}}>
+                                <div style={{fontSize:"32px",opacity:0.45}}>📸</div>
+                                <div style={{fontSize:"9px",color:"#fda4af",marginTop:"4px"}}>No photo</div>
+                              </div>
+                          }
+                          {/* Mood badge */}
+                          <div className="mem-mood">{mem.mood || "🥰"}</div>
+                          {/* Tag badge */}
+                          <div className="mem-tag">{mem.tag}</div>
+                        </div>
+
+                        {/* Caption */}
+                        <div className="mem-caption-area">
+                          <div className="mem-caption-title">{mem.title}</div>
+                          <div className="mem-caption-meta">
+                            {mem.date ? new Date(mem.date).toLocaleDateString("en-US",{month:"short",day:"numeric"}) : ""}
+                          </div>
+                        </div>
+
+                        {/* Delete */}
+                        <button
+                          className="mem-delete"
+                          onClick={e => { e.stopPropagation(); onDelete(mem._id); }}
+                          disabled={deletingMemory===mem._id}
+                        >
+                          {deletingMemory===mem._id
+                            ? <span style={{width:"8px",height:"8px",border:"1.5px solid #fca5a5",borderTopColor:"#ef4444",borderRadius:"50%",animation:"spin 0.7s linear infinite",display:"inline-block"}}/>
+                            : "✕"}
+                        </button>
+                      </div>
+
+                      {/* Note expander below polaroid */}
+                      {expandedMemory===mem._id && mem.note && (
+                        <div className="mem-detail" style={{maxWidth:"260px",marginTop:"10px"}}>
+                          <p style={{fontSize:"12px",color:"#6b7280",lineHeight:"1.65",fontStyle:"italic"}}>"{mem.note}"</p>
+                          <button onClick={() => setExpandedMemory(null)} style={{fontSize:"11px",color:"#f43f5e",background:"none",border:"none",cursor:"pointer",marginTop:"6px"}}>Close ↑</button>
+                        </div>
+                      )}
+                      {expandedMemory!==mem._id && mem.note && (
+                        <button onClick={() => setExpandedMemory(mem._id)} style={{fontSize:"11px",color:"#fda4af",background:"none",border:"none",cursor:"pointer",marginTop:"6px",marginLeft:"4px"}}>Read note ↓</button>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
           </div>
-        )}
+        );
+      })()}
     </div>
   );
 }

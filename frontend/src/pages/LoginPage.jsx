@@ -2,10 +2,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import GoogleSignInButton from "../components/GoogleSignInButton";
+import logo from "../assets/logo2.png"
+import bucketlist from "../assets/bl.png"
+import game from "../assets/gane.png"
+import timeline from "../assets/mt.png"
+import dates from "../assets/datees.png"
 
 const features = [
   {
-    emoji:"📅",
+    emoji: dates,
     title:"A–Z Date Ideas",
     desc:"26 curated dates to check off together",
     modalTitle:"Your A–Z Date Bucket List",
@@ -15,7 +20,7 @@ const features = [
     bg:"linear-gradient(135deg,#fff1f2,#fce7f3)",
   },
   {
-    emoji:"🌟",
+    emoji: bucketlist,
     title:"Shared Bucket List",
     desc:"Dream, plan & achieve goals as a couple",
     modalTitle:"Your Couple Bucket List",
@@ -25,7 +30,7 @@ const features = [
     bg:"linear-gradient(135deg,#fff7ed,#fef3c7)",
   },
   {
-    emoji:"📸",
+    emoji: timeline,
     title:"Memory Timeline",
     desc:"Photos, moods & love notes forever",
     modalTitle:"Your Memory Timeline",
@@ -35,7 +40,7 @@ const features = [
     bg:"linear-gradient(135deg,#fdf2f8,#fce7f3)",
   },
   {
-    emoji:"🎮",
+    emoji: game,
     title:"Couple Games",
     desc:"Truth, Dare & Quiz nights",
     modalTitle:"Couple Games Night",
@@ -162,7 +167,9 @@ export default function LoginPage() {
 
         {/* Logo */}
         <div className="logo-pulse fade-up" style={{textAlign:"center",marginBottom:"16px"}}>
-          <div style={{fontSize:"42px",lineHeight:1,marginBottom:"5px"}}>💑</div>
+          <div style={{fontSize:"42px",lineHeight:1,marginBottom:"5px"}} className="flex justify-center items-center">
+            <img src={logo} alt="heartoz_logo" className="h-16" />
+          </div>
           <h1 className="df shimmer-text" style={{fontSize:"32px",fontWeight:700,margin:0}}>HeartOZ</h1>
           <p className="df" style={{color:"#fb7185",fontSize:"12px",margin:"3px 0 0",fontStyle:"italic",letterSpacing:"1.2px"}}>
             your couple's private world
@@ -193,13 +200,14 @@ export default function LoginPage() {
               style={{animationDelay:`${i*70+280}ms`}}
               onClick={()=>setActiveFeature(feat)}
             >
-              <div style={{
-                fontSize:"19px",flexShrink:0,
-                width:"36px",height:"36px",
+              <img style={{
+                flexShrink:0,
                 background:feat.bg,
                 borderRadius:"10px",display:"flex",alignItems:"center",justifyContent:"center",
                 border:"1px solid rgba(253,164,175,0.18)",
-              }}>{feat.emoji}</div>
+              }}
+              className="h-12"
+               src={feat.emoji} />
               <div style={{flex:1}}>
                 <div style={{fontWeight:700,fontSize:"12px",color:"#1f2937"}}>{feat.title}</div>
                 <div style={{fontSize:"11px",color:"#9ca3af",marginTop:"1px"}}>{feat.desc}</div>
@@ -213,10 +221,33 @@ export default function LoginPage() {
           Made with 💗 for couples everywhere
         </p>
         <p style={{textAlign:"center",marginTop:"8px"}}>
-          <button onClick={() => navigate("/about")} style={{background:"none",border:"none",cursor:"pointer",fontSize:"11px",color:"#d1d5db",textDecoration:"underline",fontFamily:"'Lato',sans-serif"}}>
+          <button onClick={() => navigate("/about")} style={{background:"none",border:"none",cursor:"pointer",fontSize:"11px",color:"black",textDecoration:"underline",fontFamily:"'Lato',sans-serif"}}>
             What is HeartOZ? Learn more →
           </button>
         </p>
+
+{/* ✅ Legal links (added) */}
+<p style={{
+  textAlign:"center",
+  fontSize:"10px",
+  color:"black",
+  marginTop:"6px"
+}}>
+  By continuing, you agree to our{" "}
+  <span
+    onClick={() => navigate("/terms")}
+    style={{textDecoration:"underline", cursor:"pointer"}}
+  >
+    Terms
+  </span>{" "}
+  &{" "}
+  <span
+    onClick={() => navigate("/privacy")}
+    style={{textDecoration:"underline", cursor:"pointer"}}
+  >
+    Privacy Policy
+  </span>
+</p>
       </div>
 
       {/* ── Feature modal ── */}
@@ -226,12 +257,14 @@ export default function LoginPage() {
             <button className="close-btn" onClick={()=>setActiveFeature(null)}>✕</button>
 
             {/* Header */}
-            <div style={{
-              width:"56px",height:"56px",borderRadius:"16px",
+            <img 
+             src={f.emoji}
+            style={{
+              borderRadius:"16px",
               background:f.bg,display:"flex",alignItems:"center",justifyContent:"center",
               fontSize:"28px",marginBottom:"14px",
               boxShadow:`0 4px 16px ${f.color}22`,
-            }}>{f.emoji}</div>
+            }} />
 
             <h2 className="df" style={{fontSize:"22px",fontWeight:700,color:"#1f2937",margin:"0 0 8px"}}>
               {f.modalTitle}
@@ -260,3 +293,6 @@ export default function LoginPage() {
     </div>
   );
 }
+
+
+

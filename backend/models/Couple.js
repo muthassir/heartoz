@@ -115,6 +115,36 @@ const coupleSchema = new mongoose.Schema(
       default: {},
     },
 
+    // ── Couple games state (Truth/Dare) ────────────────────────────────
+    // turnUserId: who should submit next
+    // pending: a submission waiting for the other user to review (done/skip)
+    game: {
+      type: new mongoose.Schema(
+        {
+          turnUserId: { type: String, default: null },
+          pending: {
+            type: new mongoose.Schema(
+              {
+                type: { type: String, default: null }, // "truth" | "dare" | null
+                fromUserId: { type: String, default: null }, // sender
+                toUserId: { type: String, default: null },   // reviewer
+
+                truthPrompt: { type: String, default: "" },
+                truthText:   { type: String, default: "" },
+
+                darePrompt:  { type: String, default: "" },
+                dareVideo:   { type: String, default: null }, // data URI
+              },
+              { _id: false }
+            ),
+            default: {},
+          },
+        },
+        { _id: false }
+      ),
+      default: undefined,
+    },
+
     // Date idea favs & done — array of idea id strings e.g. ["r1","a3"]
     ideaFavs: { type: [String], default: [] },
     ideaDone: { type: [String], default: [] },

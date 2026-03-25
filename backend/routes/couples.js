@@ -22,15 +22,33 @@ router.get("/:coupleId",
   coupleGuard,
   async (req, res) => {
     try {
-      const couple = await Couple.findById(req.params.coupleId).lean();
+      const couple = await Couple.findById(req.params.coupleId);
       if (!couple) return res.status(404).json({ message: "Couple not found." });
+
+      // Backfill game defaults for existing couples created before this feature.
+      if (!couple.game || !couple.game.turnUserId) {
+        const firstMember = couple.members?.[0];
+        couple.game = {
+          turnUserId: firstMember ? firstMember.toString() : null,
+          pending: {
+            type: null,
+            fromUserId: null,
+            toUserId: null,
+            truthPrompt: "",
+            truthText: "",
+            darePrompt: "",
+            dareVideo: null,
+          },
+        };
+        await couple.save();
+      }
 
       const partnerId = couple.members.find(id => id.toString() !== req.user._id.toString());
       const partner   = partnerId
         ? await User.findById(partnerId).select("name email photo").lean()
         : null;
 
-      res.json({ couple, partner });
+      res.json({ couple: couple.toObject(), partner });
     } catch (err) {
       logger.error("Get couple error", { error: err.message });
       res.status(500).json({ message: "Failed to load couple data." });
@@ -268,6 +286,196 @@ router.patch("/:coupleId/scores",
     } catch (err) {
       logger.error("Update score error", { error: err.message });
       res.status(500).json({ message: "Failed to update score." });
+    }
+  }
+);
+
+// ── Game: Truth submit ────────────────────────────────────────────────────
+router.post("/:coupleId/games/truth",
+  writeLimiter,
+  validateCoupleId, handleValidation,
+  coupleGuard,
+  async (req, res) => {
+    try {
+      const { truthPrompt, text } = req.body || {};
+      if (typeof truthPrompt !== "string" || !truthPrompt.trim()) {
+        return res.status(422).json({ message: "truthPrompt is required." });
+      }
+      if (typeof text !== "string" || !text.trim()) {
+        return res.status(422).json({ message: "Truth text is required." });
+      }
+      if (text.length > 5000) {
+        return res.status(422).json({ message: "Truth text too long." });
+      }
+
+      const couple = await Couple.findById(req.params.coupleId);
+      if (!couple) return res.status(404).json({ message: "Couple not found." });
+
+      // Init game state if missing (defensive for older DB rows).
+      if (!couple.game) {
+        const firstMember = couple.members?.[0];
+        couple.game = {
+          turnUserId: firstMember ? firstMember.toString() : null,
+          pending: { type: null, fromUserId: null, toUserId: null, truthPrompt: "", truthText: "", darePrompt: "", dareVideo: null },
+        };
+      }
+      if (couple.game.pending?.type) {
+        return res.status(409).json({ message: "A game submission is already pending." });
+      }
+
+      const senderId = req.user._id.toString();
+      if (couple.game.turnUserId !== senderId) {
+        return res.status(403).json({ message: "Not your turn." });
+      }
+
+      const toUserIdObj = couple.members.find(id => id.toString() !== senderId);
+      const toUserId = toUserIdObj ? toUserIdObj.toString() : null;
+      if (!toUserId) return res.status(403).json({ message: "Partner not found." });
+
+      couple.game.pending = {
+        type: "truth",
+        fromUserId: senderId,
+        toUserId,
+        truthPrompt: truthPrompt.trim(),
+        truthText: text.trim(),
+        darePrompt: "",
+        dareVideo: null,
+      };
+      couple.game.turnUserId = toUserId; // receiver reviews next
+
+      await couple.save();
+      res.json({ game: couple.game, scores: Object.fromEntries(couple.scores) });
+    } catch (err) {
+      logger.error("Game truth submit error", { error: err.message });
+      res.status(500).json({ message: "Failed to submit truth." });
+    }
+  }
+);
+
+// ── Game: Dare submit (video) ─────────────────────────────────────────────
+router.post("/:coupleId/games/dare",
+  writeLimiter,
+  validateCoupleId, handleValidation,
+  coupleGuard,
+  async (req, res) => {
+    try {
+      const { darePrompt, video } = req.body || {};
+      if (typeof darePrompt !== "string" || !darePrompt.trim()) {
+        return res.status(422).json({ message: "darePrompt is required." });
+      }
+      if (typeof video !== "string" || !video.trim()) {
+        return res.status(422).json({ message: "video is required." });
+      }
+
+      // Approximate size guard for base64 strings.
+      const MAX_VIDEO_BYTES = 20 * 1024 * 1024; // 20MB
+      if (Buffer.byteLength(video, "utf8") > MAX_VIDEO_BYTES) {
+        return res.status(422).json({ message: "Video too large (max 20MB)." });
+      }
+      if (!video.startsWith("data:video/") || !video.includes(";base64,")) {
+        return res.status(422).json({ message: "Invalid video format. Send as data URI base64." });
+      }
+
+      const couple = await Couple.findById(req.params.coupleId);
+      if (!couple) return res.status(404).json({ message: "Couple not found." });
+
+      if (!couple.game) {
+        const firstMember = couple.members?.[0];
+        couple.game = {
+          turnUserId: firstMember ? firstMember.toString() : null,
+          pending: { type: null, fromUserId: null, toUserId: null, truthPrompt: "", truthText: "", darePrompt: "", dareVideo: null },
+        };
+      }
+      if (couple.game.pending?.type) {
+        return res.status(409).json({ message: "A game submission is already pending." });
+      }
+
+      const senderId = req.user._id.toString();
+      if (couple.game.turnUserId !== senderId) {
+        return res.status(403).json({ message: "Not your turn." });
+      }
+
+      const toUserIdObj = couple.members.find(id => id.toString() !== senderId);
+      const toUserId = toUserIdObj ? toUserIdObj.toString() : null;
+      if (!toUserId) return res.status(403).json({ message: "Partner not found." });
+
+      couple.game.pending = {
+        type: "dare",
+        fromUserId: senderId,
+        toUserId,
+        truthPrompt: "",
+        truthText: "",
+        darePrompt: darePrompt.trim(),
+        dareVideo: video.trim(),
+      };
+      couple.game.turnUserId = toUserId; // receiver reviews next
+
+      await couple.save();
+      res.json({ game: couple.game, scores: Object.fromEntries(couple.scores) });
+    } catch (err) {
+      logger.error("Game dare submit error", { error: err.message });
+      res.status(500).json({ message: "Failed to submit dare video." });
+    }
+  }
+);
+
+// ── Game: Receiver review (done / skip) ───────────────────────────────────
+router.post("/:coupleId/games/review",
+  writeLimiter,
+  validateCoupleId, handleValidation,
+  coupleGuard,
+  async (req, res) => {
+    try {
+      const { decision } = req.body || {};
+      if (!["done", "skip"].includes(decision)) {
+        return res.status(422).json({ message: "decision must be 'done' or 'skip'." });
+      }
+
+      const couple = await Couple.findById(req.params.coupleId);
+      if (!couple) return res.status(404).json({ message: "Couple not found." });
+
+      if (!couple.game) {
+        return res.status(409).json({ message: "No game state." });
+      }
+      const pending = couple.game.pending || {};
+      if (!pending.type || !pending.fromUserId || !pending.toUserId) {
+        return res.status(409).json({ message: "No pending submission to review." });
+      }
+
+      const reviewerId = req.user._id.toString();
+      if (pending.toUserId !== reviewerId) {
+        return res.status(403).json({ message: "Not your review turn." });
+      }
+
+      const senderId = pending.fromUserId;
+
+      const fullPoints  = pending.type === "truth" ? 10 : 20;
+      const skipPoints  = pending.type === "truth" ? 5  : 10;
+      const addPoints   = decision === "done" ? fullPoints : skipPoints;
+
+      const current = couple.scores.get(senderId) || 0;
+      couple.scores.set(senderId, current + addPoints);
+
+      // Reset pending & decide next turn
+      couple.game.pending = {
+        type: null,
+        fromUserId: null,
+        toUserId: null,
+        truthPrompt: "",
+        truthText: "",
+        darePrompt: "",
+        dareVideo: null,
+      };
+
+      // done -> receiver gets next turn
+      // skip -> sender gets next turn (receiver skipped their turn)
+      couple.game.turnUserId = decision === "done" ? reviewerId : senderId;
+
+      await couple.save();
+      res.json({ game: couple.game, scores: Object.fromEntries(couple.scores) });
+    } catch (err) {
+      logger.error("Game review error", { error: err.message });
+      res.status(500).json({ message: "Failed to review submission." });
     }
   }
 );
