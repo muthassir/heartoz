@@ -39,10 +39,26 @@ const noSQLSanitize = (req, res, next) => {
 
 
 // ── 2. XSS — strip all HTML/JS from every string field recursively ────────
+// const xssSanitizeValue = (val) => {
+//   if (typeof val === "string") {
+//     // Avoid expensive XSS processing for large base64 payloads.
+//     if (val.startsWith("data:video/") || val.startsWith("data:audio/")) return val;
+//     return xss(val, { whiteList: {}, stripIgnoreTag: true });
+//   }
+//   if (Array.isArray(val))      return val.map(xssSanitizeValue);
+//   if (val && typeof val === "object")
+//     return Object.fromEntries(Object.entries(val).map(([k, v]) => [k, xssSanitizeValue(v)]));
+//   return val;
+// };
+
 const xssSanitizeValue = (val) => {
   if (typeof val === "string") {
-    // Avoid expensive XSS processing for large base64 payloads.
-    if (val.startsWith("data:video/") || val.startsWith("data:audio/")) return val;
+    // Skip XSS sanitization for all base64 data URIs (images, videos, audio)
+    if (val.startsWith("data:image/") || 
+        val.startsWith("data:video/") || 
+        val.startsWith("data:audio/")) {
+      return val;
+    }
     return xss(val, { whiteList: {}, stripIgnoreTag: true });
   }
   if (Array.isArray(val))      return val.map(xssSanitizeValue);

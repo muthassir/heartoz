@@ -105,16 +105,38 @@ function JournalApp() {
     setTogglingDate(null);
   };
 
-  const handleDatePhoto = (letter, file) => {
+  const handleDatePhoto = async (letter, file) => {
     if (!file?.type.startsWith("image/")) return;
     setUploadingDate(letter);
     const r = new FileReader();
     r.onload = async e => {
-      const photo  = e.target.result;
-      const doneAt = new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
-      setDates(d => ({ ...d, [letter]: { ...(d[letter]||{}), photo, doneAt } }));
-      await API.updateDate(coupleId, letter, { photo, doneAt }).catch(console.error);
+      try {
+        const photo = e.target.result;
+        const doneAt = new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+        
+        // Update local state first for immediate feedback
+        setDates(d => ({ ...d, [letter]: { ...(d[letter]||{}), photo, doneAt } }));
+        
+        // Save to backend and wait for response
+        const response = await API.updateDate(coupleId, letter, { photo, doneAt });
+        
+        // If backend returns updated data, sync it to ensure consistency
+        if (response?.data?.date) {
+          setDates(d => ({ ...d, [letter]: response.data.date }));
+        }
+        
+        setUploadingDate(null);
+      } catch (error) {
+        console.error("Failed to upload photo:", error);
+        setUploadingDate(null);
+        // Optionally show error to user
+        alert("Failed to upload photo. Please try again.");
+      }
+    };
+    r.onerror = () => {
+      console.error("FileReader error");
       setUploadingDate(null);
+      alert("Failed to read image file.");
     };
     r.readAsDataURL(file);
   };
@@ -414,7 +436,7 @@ export default function App() {
         path="/"
         element={
           !user ? (
-            <LoginPage />   // ✅ show content instead of redirect
+            <LoginPage />   
           ) : !user.coupleId ? (
             <PairPage onPaired={() => window.location.reload()} />
           ) : (

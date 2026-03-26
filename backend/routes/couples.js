@@ -12,11 +12,51 @@ const {
   handleValidation,
 } = require("../middlewares/sanitize");
 const logger = require("../utils/logger");
+const { uploadBase64 } = require("../config/cloudinary");
 
 const router = express.Router();
 router.use(protect);
 
 // ── GET /api/couples/:coupleId ─────────────────────────────────────────────
+// router.get("/:coupleId",
+//   validateCoupleId, handleValidation,
+//   coupleGuard,
+//   async (req, res) => {
+//     try {
+//       const couple = await Couple.findById(req.params.coupleId);
+//       if (!couple) return res.status(404).json({ message: "Couple not found." });
+
+//       // Backfill game defaults for existing couples created before this feature.
+//       if (!couple.game || !couple.game.turnUserId) {
+//         const firstMember = couple.members?.[0];
+//         couple.game = {
+//           turnUserId: firstMember ? firstMember.toString() : null,
+//           pending: {
+//             type: null,
+//             fromUserId: null,
+//             toUserId: null,
+//             truthPrompt: "",
+//             truthText: "",
+//             darePrompt: "",
+//             dareVideo: null,
+//           },
+//         };
+//         await couple.save();
+//       }
+
+//       const partnerId = couple.members.find(id => id.toString() !== req.user._id.toString());
+//       const partner   = partnerId
+//         ? await User.findById(partnerId).select("name email photo").lean()
+//         : null;
+
+//       res.json({ couple: couple.toObject(), partner });
+//     } catch (err) {
+//       logger.error("Get couple error", { error: err.message });
+//       res.status(500).json({ message: "Failed to load couple data." });
+//     }
+//   }
+// );
+
 router.get("/:coupleId",
   validateCoupleId, handleValidation,
   coupleGuard,
@@ -48,7 +88,28 @@ router.get("/:coupleId",
         ? await User.findById(partnerId).select("name email photo").lean()
         : null;
 
-      res.json({ couple: couple.toObject(), partner });
+      // Convert the couple to a plain object
+      const coupleObj = couple.toObject();
+      
+      // FIX: Convert dates Map to a plain object
+      if (couple.dates && couple.dates instanceof Map) {
+        const datesObj = {};
+        for (const [key, value] of couple.dates.entries()) {
+          datesObj[key] = {
+            done: value.done || false,
+            photo: value.photo || null,
+            doneAt: value.doneAt || null
+          };
+        }
+        coupleObj.dates = datesObj;
+      }
+      
+      // Also convert scores Map (optional, but good practice)
+      if (couple.scores && couple.scores instanceof Map) {
+        coupleObj.scores = Object.fromEntries(couple.scores);
+      }
+
+      res.json({ couple: coupleObj, partner });
     } catch (err) {
       logger.error("Get couple error", { error: err.message });
       res.status(500).json({ message: "Failed to load couple data." });
@@ -76,6 +137,16 @@ router.patch("/:coupleId/dates/:letter",
         }
         if (photo && !photo.startsWith("data:image/")) {
           return res.status(422).json({ message: "Only base64 images allowed." });
+        }
+
+        // Upload to Cloudinary and store URL instead of raw base64
+        if (photo) {
+          try {
+            photo = await uploadBase64(photo, { resource_type: "image" });
+          } catch (uploadErr) {
+            logger.error("Cloudinary date photo upload error", { error: uploadErr.message });
+            return res.status(500).json({ message: "Failed to upload photo. Please try again." });
+          }
         }
       }
 
@@ -189,7 +260,19 @@ router.post("/:coupleId/memories",
         return res.status(400).json({ message: "Memory limit reached (max 500)." });
       }
 
-      const { title, date, note, tag, mood, imageUrl } = req.body;
+      const { title, date, note, tag, mood } = req.body;
+      let { imageUrl } = req.body;
+
+      // Upload memory image to Cloudinary if provided
+      if (imageUrl) {
+        try {
+          imageUrl = await uploadBase64(imageUrl, { resource_type: "image" });
+        } catch (uploadErr) {
+          logger.error("Cloudinary memory image upload error", { error: uploadErr.message });
+          return res.status(500).json({ message: "Failed to upload image. Please try again." });
+        }
+      }
+
       couple.memories.unshift({ title, date, note, tag, mood, imageUrl: imageUrl || null });
       await couple.save();
 
@@ -214,6 +297,16 @@ router.patch("/:coupleId/memories/:memoryId",
 
       const memory = couple.memories.id(req.params.memoryId);
       if (!memory) return res.status(404).json({ message: "Memory not found." });
+
+      // Upload new image to Cloudinary if it's a base64 string
+      if (req.body.imageUrl && req.body.imageUrl.startsWith("data:image/")) {
+        try {
+          req.body.imageUrl = await uploadBase64(req.body.imageUrl, { resource_type: "image" });
+        } catch (uploadErr) {
+          logger.error("Cloudinary memory image update error", { error: uploadErr.message });
+          return res.status(500).json({ message: "Failed to upload image. Please try again." });
+        }
+      }
 
       const allowed = ["title","date","note","tag","mood","imageUrl"];
       allowed.forEach(field => {
@@ -399,6 +492,18 @@ router.post("/:coupleId/games/dare",
       const toUserId = toUserIdObj ? toUserIdObj.toString() : null;
       if (!toUserId) return res.status(403).json({ message: "Partner not found." });
 
+      // Upload video to Cloudinary and store URL instead of raw base64
+      let videoUrl;
+      try {
+        videoUrl = await uploadBase64(video, {
+          resource_type: "video",
+          eager: [{ format: "mp4", quality: "auto" }],
+        });
+      } catch (uploadErr) {
+        logger.error("Cloudinary dare video upload error", { error: uploadErr.message });
+        return res.status(500).json({ message: "Failed to upload video. Please try again." });
+      }
+
       couple.game.pending = {
         type: "dare",
         fromUserId: senderId,
@@ -406,7 +511,7 @@ router.post("/:coupleId/games/dare",
         truthPrompt: "",
         truthText: "",
         darePrompt: darePrompt.trim(),
-        dareVideo: video.trim(),
+        dareVideo: videoUrl, // Cloudinary URL — not raw base64
       };
       couple.game.turnUserId = toUserId; // receiver reviews next
 
