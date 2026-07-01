@@ -148,6 +148,64 @@ const coupleSchema = new mongoose.Schema(
     // Date idea favs & done — array of idea id strings e.g. ["r1","a3"]
     ideaFavs: { type: [String], default: [] },
     ideaDone: { type: [String], default: [] },
+
+    // ── Bet Game (Tic-Tac-Toe with stakes) ─────────────────────────────
+    ticTacToe: {
+      type: new mongoose.Schema(
+        {
+          board:      { type: [String], default: () => Array(9).fill(null) },
+          turnUserId: { type: String, default: null },
+          status: {
+            type: String,
+            enum: ["idle", "playing", "won", "draw", "awaiting_stake", "stake_set"],
+            default: "idle",
+          },
+          winnerUserId: { type: String, default: null },
+          symbols: {
+            type: Map,
+            of: String, // userId -> "X" | "O"
+            default: {},
+          },
+          stake: {
+            type: new mongoose.Schema(
+              {
+                text:       { type: String, default: "" },
+                fromUserId: { type: String, default: null }, // winner who set the stake
+                toUserId:   { type: String, default: null }, // loser who must fulfil it
+                status: {
+                  type: String,
+                  enum: ["none", "pending", "done", "declined"],
+                  default: "none",
+                },
+              },
+              { _id: false }
+            ),
+            default: {},
+          },
+          roundsWon: {
+            type: Map,
+            of: Number,
+            default: {},
+          },
+        },
+        { _id: false }
+      ),
+      default: () => ({}),
+    },
+
+    // ── Customisable main theme (shared by the couple) ─────────────────
+    theme: {
+      type: new mongoose.Schema(
+        {
+          id:        { type: String, default: "rose" },
+          primary:   { type: String, default: "#f43f5e" },
+          secondary: { type: String, default: "#ec4899" },
+          tertiary:  { type: String, default: "#f97316" },
+        },
+        { _id: false }
+      ),
+      default: () => ({ id: "rose", primary: "#f43f5e", secondary: "#ec4899", tertiary: "#f97316" }),
+    },
   },
   { timestamps: true }
 );

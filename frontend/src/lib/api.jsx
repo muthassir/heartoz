@@ -3,8 +3,8 @@ import axios from "axios";
 import { auth } from "./firebase";
 
 const api = axios.create({
-  baseURL:         "https://heartoz.onrender.com/api",
-  // baseURL:      "http://localhost:5000/api",
+  // baseURL:         "https://heartoz.onrender.com/api",
+  baseURL:      "http://localhost:5000/api",
   withCredentials: true,
 });
 
@@ -75,6 +75,15 @@ export const submitDare = (coupleId, darePrompt, video) =>
 // decision: "done" | "skip"
 export const reviewGame = (coupleId, decision) =>
   api.post(`/couples/${coupleId}/games/review`, { decision });
+
+// Bet Game (Tic-Tac-Toe with stakes)
+export const startBetGame   = (coupleId)           => api.post(`/couples/${coupleId}/games/tictactoe/start`);
+export const playBetGame    = (coupleId, index)    => api.post(`/couples/${coupleId}/games/tictactoe/move`, { index });
+export const setBetStake    = (coupleId, text)     => api.post(`/couples/${coupleId}/games/tictactoe/stake`, { text });
+export const reviewBetStake = (coupleId, decision) => api.post(`/couples/${coupleId}/games/tictactoe/stake/review`, { decision });
+
+// Theme
+export const updateTheme = (coupleId, theme) => api.patch(`/couples/${coupleId}/theme`, theme);
 
 export const toggleIdeaFav  = (coupleId, ideaId) => api.patch(`/couples/${coupleId}/ideas/fav`,  { ideaId });
 export const toggleIdeaDone = (coupleId, ideaId) => api.patch(`/couples/${coupleId}/ideas/done`, { ideaId });

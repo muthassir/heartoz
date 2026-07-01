@@ -109,6 +109,11 @@ router.get("/:coupleId",
         coupleObj.scores = Object.fromEntries(couple.scores);
       }
 
+      // Convert ticTacToe's internal Maps (symbols, roundsWon) to plain objects
+      if (couple.ticTacToe) {
+        coupleObj.ticTacToe = serializeTicTacToe(couple.ticTacToe);
+      }
+
       res.json({ couple: coupleObj, partner });
     } catch (err) {
       logger.error("Get couple error", { error: err.message });
@@ -581,6 +586,298 @@ router.post("/:coupleId/games/review",
     } catch (err) {
       logger.error("Game review error", { error: err.message });
       res.status(500).json({ message: "Failed to review submission." });
+    }
+  }
+);
+
+// ── Helpers for the Bet Game (Tic-Tac-Toe) ─────────────────────────────────
+const WIN_LINES = [
+  [0,1,2],[3,4,5],[6,7,8],
+  [0,3,6],[1,4,7],[2,5,8],
+  [0,4,8],[2,4,6],
+];
+
+const checkWinner = (board) => {
+  for (const [a,b,c] of WIN_LINES) {
+    if (board[a] && board[a] === board[b] && board[a] === board[c]) return board[a]; // "X" | "O"
+  }
+  if (board.every(c => c)) return "draw";
+  return null;
+};
+
+const emptyTicTacToe = () => ({
+  board: Array(9).fill(null),
+  turnUserId: null,
+  status: "idle",
+  winnerUserId: null,
+  symbols: {},
+  stake: { text: "", fromUserId: null, toUserId: null, status: "none" },
+  roundsWon: {},
+});
+
+// Mongoose Map subfields don't auto-flatten on res.json — convert manually.
+const serializeTicTacToe = (ticTacToe) => {
+  if (!ticTacToe) return emptyTicTacToe();
+  const obj = typeof ticTacToe.toObject === "function" ? ticTacToe.toObject() : ticTacToe;
+  return {
+    ...obj,
+    symbols:   obj.symbols   instanceof Map ? Object.fromEntries(obj.symbols)   : (obj.symbols || {}),
+    roundsWon: obj.roundsWon instanceof Map ? Object.fromEntries(obj.roundsWon) : (obj.roundsWon || {}),
+  };
+};
+
+// ── Bet Game: start / restart a round ──────────────────────────────────────
+router.post("/:coupleId/games/tictactoe/start",
+  writeLimiter,
+  validateCoupleId, handleValidation,
+  coupleGuard,
+  async (req, res) => {
+    try {
+      const couple = await Couple.findById(req.params.coupleId);
+      if (!couple) return res.status(404).json({ message: "Couple not found." });
+
+      const existing = couple.ticTacToe ? couple.ticTacToe.toObject() : null;
+      // Only block if a game is actively being played — allow restart from stuck stake states
+      if (existing && existing.status === "playing") {
+        return res.status(409).json({ message: "A round is already in progress." });
+      }
+
+      const starterId = req.user._id.toString();
+      const members = couple.members.map(m => m.toString());
+      const otherId = members.find(id => id !== starterId);
+      if (!otherId) return res.status(403).json({ message: "Partner not found." });
+
+      const prevRounds  = existing?.roundsWon || {};
+      const prevHistory = existing?.history   || [];
+
+      couple.ticTacToe = {
+        board: Array(9).fill(null),
+        turnUserId: starterId,
+        status: "playing",
+        winnerUserId: null,
+        symbols: { [starterId]: "X", [otherId]: "O" },
+        stake: { text: "", fromUserId: null, toUserId: null, status: "none" },
+        roundsWon: prevRounds,
+        history: prevHistory,
+      };
+
+      couple.markModified('ticTacToe');
+      await couple.save();
+      res.json({ ticTacToe: serializeTicTacToe(couple.ticTacToe) });
+    } catch (err) {
+      logger.error("Bet game start error", { error: err.message });
+      res.status(500).json({ message: "Failed to start round." });
+    }
+  }
+);
+
+// ── Bet Game: make a move ──────────────────────────────────────────────────
+router.post("/:coupleId/games/tictactoe/move",
+  writeLimiter,
+  validateCoupleId, handleValidation,
+  coupleGuard,
+  async (req, res) => {
+    try {
+      const { index } = req.body || {};
+      if (!Number.isInteger(index) || index < 0 || index > 8) {
+        return res.status(422).json({ message: "Invalid cell index." });
+      }
+
+      const couple = await Couple.findById(req.params.coupleId);
+      if (!couple) return res.status(404).json({ message: "Couple not found." });
+
+      const game = couple.ticTacToe;
+      if (!game || game.status !== "playing") {
+        return res.status(409).json({ message: "No round in progress." });
+      }
+
+      const playerId = req.user._id.toString();
+      if (game.turnUserId !== playerId) {
+        return res.status(403).json({ message: "Not your turn." });
+      }
+
+      const board = [...game.board];
+      if (board[index]) {
+        return res.status(409).json({ message: "Cell already taken." });
+      }
+
+      const mySymbol = game.symbols.get(playerId);
+      board[index] = mySymbol;
+      couple.ticTacToe.board = board;
+
+      const result = checkWinner(board);
+      const otherId = couple.members.map(m => m.toString()).find(id => id !== playerId);
+
+      if (result === "draw") {
+        couple.ticTacToe.status = "draw";
+        couple.ticTacToe.turnUserId = null;
+      } else if (result === mySymbol) {
+        couple.ticTacToe.status = "awaiting_stake";
+        couple.ticTacToe.winnerUserId = playerId;
+        couple.ticTacToe.turnUserId = playerId; // winner sets the stake next
+        const current = couple.ticTacToe.roundsWon.get(playerId) || 0;
+        couple.ticTacToe.roundsWon.set(playerId, current + 1);
+      } else {
+        couple.ticTacToe.turnUserId = otherId;
+      }
+
+      couple.markModified('ticTacToe');
+      await couple.save();
+      res.json({ ticTacToe: serializeTicTacToe(couple.ticTacToe) });
+    } catch (err) {
+      logger.error("Bet game move error", { error: err.message });
+      res.status(500).json({ message: "Failed to play move." });
+    }
+  }
+);
+
+// ── Bet Game: winner sets the stake ("buy me this", custom dare, etc.) ─────
+router.post("/:coupleId/games/tictactoe/stake",
+  writeLimiter,
+  validateCoupleId, handleValidation,
+  coupleGuard,
+  async (req, res) => {
+    try {
+      const { text } = req.body || {};
+      if (typeof text !== "string" || !text.trim()) {
+        return res.status(422).json({ message: "Stake text is required." });
+      }
+      if (text.length > 300) {
+        return res.status(422).json({ message: "Stake text too long (max 300 chars)." });
+      }
+
+      const couple = await Couple.findById(req.params.coupleId);
+      if (!couple) return res.status(404).json({ message: "Couple not found." });
+
+      const game = couple.ticTacToe;
+      if (!game || game.status !== "awaiting_stake") {
+        return res.status(409).json({ message: "No stake to set right now." });
+      }
+
+      const winnerId = req.user._id.toString();
+      if (game.winnerUserId !== winnerId) {
+        return res.status(403).json({ message: "Only the winner can set the stake." });
+      }
+
+      const loserId = couple.members.map(m => m.toString()).find(id => id !== winnerId);
+
+      couple.ticTacToe.stake = {
+        text: text.trim(),
+        fromUserId: winnerId,
+        toUserId: loserId,
+        status: "pending",
+      };
+      couple.ticTacToe.status = "stake_set";
+      couple.ticTacToe.turnUserId = loserId; // loser reviews next
+
+      couple.markModified('ticTacToe');
+      await couple.save();
+      res.json({ ticTacToe: serializeTicTacToe(couple.ticTacToe) });
+    } catch (err) {
+      logger.error("Bet game stake error", { error: err.message });
+      res.status(500).json({ message: "Failed to set stake." });
+    }
+  }
+);
+
+// ── Bet Game: loser responds to the stake (done / decline) ─────────────────
+router.post("/:coupleId/games/tictactoe/stake/review",
+  writeLimiter,
+  validateCoupleId, handleValidation,
+  coupleGuard,
+  async (req, res) => {
+    try {
+      const { decision } = req.body || {};
+      if (!["done", "decline"].includes(decision)) {
+        return res.status(422).json({ message: "decision must be 'done' or 'decline'." });
+      }
+
+      const couple = await Couple.findById(req.params.coupleId);
+      if (!couple) return res.status(404).json({ message: "Couple not found." });
+
+      const game = couple.ticTacToe;
+      if (!game || game.status !== "stake_set" || game.stake?.status !== "pending") {
+        return res.status(409).json({ message: "No pending stake to review." });
+      }
+
+      const reviewerId = req.user._id.toString();
+      if (game.stake.toUserId !== reviewerId) {
+        return res.status(403).json({ message: "Not your stake to review." });
+      }
+
+      couple.ticTacToe.stake.status = decision === "done" ? "done" : "declined";
+
+      // Bonus points for fulfilling the stake
+      if (decision === "done") {
+        const winnerId = game.stake.fromUserId;
+        if (couple.scores && typeof couple.scores.get === "function") {
+          const current = couple.scores.get(winnerId) || 0;
+          couple.scores.set(winnerId, current + 15);
+        }
+      }
+
+      // Log this settled stake to history (most recent first), keep last 50.
+      // Guard: old documents may not have the history array yet.
+      if (!Array.isArray(couple.ticTacToe.history)) {
+        couple.ticTacToe.history = [];
+      }
+      couple.ticTacToe.history.unshift({
+        text:        game.stake.text,
+        fromUserId:  game.stake.fromUserId,
+        toUserId:    game.stake.toUserId,
+        status:      decision === "done" ? "done" : "declined",
+        completedAt: new Date(),
+      });
+      if (couple.ticTacToe.history.length > 50) {
+        couple.ticTacToe.history = couple.ticTacToe.history.slice(0, 50);
+      }
+
+      // Reset board to idle so either player can start a fresh round.
+      couple.ticTacToe.board = Array(9).fill(null);
+      couple.ticTacToe.status = "idle";
+      couple.ticTacToe.winnerUserId = null;
+      couple.ticTacToe.turnUserId = null;
+
+      couple.markModified('ticTacToe');
+      couple.markModified('scores');
+      await couple.save();
+      res.json({ ticTacToe: serializeTicTacToe(couple.ticTacToe), scores: Object.fromEntries(couple.scores) });
+    } catch (err) {
+      logger.error("Bet game stake review error", { error: err.message });
+      res.status(500).json({ message: "Failed to review stake." });
+    }
+  }
+);
+
+// ── PATCH /api/couples/:coupleId/theme ─────────────────────────────────────
+const ALLOWED_THEMES = new Set(["rose", "sunset", "ocean", "grape", "midnight", "mint"]);
+
+router.patch("/:coupleId/theme",
+  writeLimiter,
+  validateCoupleId, handleValidation,
+  coupleGuard,
+  async (req, res) => {
+    try {
+      const { id, primary, secondary, tertiary } = req.body || {};
+      if (!id || !ALLOWED_THEMES.has(id)) {
+        return res.status(422).json({ message: "Invalid theme id." });
+      }
+      const hex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+      if (![primary, secondary, tertiary].every(c => typeof c === "string" && hex.test(c))) {
+        return res.status(422).json({ message: "Invalid colour value." });
+      }
+
+      const couple = await Couple.findById(req.params.coupleId);
+      if (!couple) return res.status(404).json({ message: "Couple not found." });
+
+      couple.theme = { id, primary, secondary, tertiary };
+      await couple.save();
+
+      audit(req, "THEME_UPDATED", { resource: `couple:${couple._id}` });
+      res.json({ theme: couple.theme });
+    } catch (err) {
+      logger.error("Update theme error", { error: err.message });
+      res.status(500).json({ message: "Failed to update theme." });
     }
   }
 );

@@ -11,30 +11,42 @@ import DatesTab     from "./pages/DatesTab";
 import BucketTab    from "./pages/BucketTab";
 import MemoriesTab  from "./pages/MemoriesTab";
 import GamesTab     from "./pages/GamesTab";
+import BetGameTab   from "./pages/BetGameTab";
+import TruthOrDareTab from "./pages/TruthOrDareTab";
 import IdeasTab     from "./pages/IdeasTab";
+import SettingsTab  from "./pages/SettingsTab";
 import * as API     from "./lib/api";
 import Raininghearts from "./components/Raininghearts";
 import LoadingScreen from "./components/LoadingScreen";
-import { FaBars, FaHeart, FaGamepad, FaCameraRetro, FaLightbulb, FaHeartbeat, FaList, FaSync, FaHome } from "react-icons/fa";
+import BottomNav from "./components/BottomNav";
+import { FaBars, FaHeart, FaGamepad, FaCameraRetro, FaLightbulb, FaHeartbeat, FaList, FaSync, FaHome, FaCog, FaComments, FaDice } from "react-icons/fa";
 import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
 
 const TAB_META = {
-  dashboard: { label:"Home",      icon:<FaHome />,        badge: null },
-  dates:     { label:"A–Z Dates", icon:<FaHeartbeat />,   badge: null },
-  bucket:    { label:"Bucket",    icon:<FaList />,         badge: null },
-  memories:  { label:"Memories",  icon:<FaCameraRetro />, badge: null },
-  games:     { label:"Games",     icon:<FaGamepad />,      badge: null },
-  ideas:     { label:"Ideas",     icon:<FaLightbulb />,   badge: null },
+  dashboard:   { label:"Home",         icon:<FaHome />,       badge: null },
+  dates:       { label:"A–Z Dates",    icon:<FaHeartbeat />,  badge: null },
+  bucket:      { label:"Bucket",       icon:<FaList />,       badge: null },
+  memories:    { label:"Memories",     icon:<FaCameraRetro />,badge: null },
+  games:       { label:"Games",        icon:<FaGamepad />,    badge: null },
+  truthordare: { label:"Truth or Dare",icon:<FaComments />,   badge: null },
+  betgame:     { label:"Bet Game",     icon:<FaDice />,       badge: null },
+  ideas:       { label:"Ideas",        icon:<FaLightbulb />,  badge: null },
+  settings:    { label:"Settings",     icon:<FaCog />,        badge: null },
 };
 
+const DEFAULT_THEME = { id:"rose", primary:"#f43f5e", secondary:"#ec4899", tertiary:"#f97316" };
+
 const TAB_ACCENT = {
-  dashboard: "#f43f5e",
-  dates:     "#f43f5e",
-  bucket:    "#8b5cf6",
-  memories:  "#f97316",
-  games:     "#10b981",
-  ideas:     "#ec4899",
+  dashboard:   "#f43f5e",
+  dates:       "#f43f5e",
+  bucket:      "#8b5cf6",
+  memories:    "#f97316",
+  games:       "#10b981",
+  truthordare: "#f43f5e",
+  betgame:     "#10b981",
+  ideas:       "#ec4899",
+  settings:    "#6b7280",
 };
 
 function JournalApp() {
@@ -65,6 +77,10 @@ function JournalApp() {
   const [playerTurn,     setPlayerTurn]     = useState(null);
   const [game,           setGame]           = useState(null);
   const [gameBusy,       setGameBusy]       = useState(false);
+  const [ticTacToe,      setTicTacToe]      = useState(null);
+  const [betBusy,        setBetBusy]        = useState(false);
+  const [theme,          setTheme]          = useState(DEFAULT_THEME);
+  const [savingTheme,    setSavingTheme]    = useState(false);
 
   const coupleId = user?.coupleId;
   const turnKey  = coupleId ? `heartoz_turn_${coupleId}` : null;
@@ -85,6 +101,8 @@ function JournalApp() {
         setIdeaFavs(c.ideaFavs || []);
         setIdeaDone(c.ideaDone || []);
         setGame(c.game || null);
+        setTicTacToe(c.ticTacToe || null);
+        setTheme(c.theme || DEFAULT_THEME);
         const storedTurn = turnKey ? localStorage.getItem(turnKey) : null;
         // If you refresh while waiting, we must not reset your turn to "my turn".
         // Use localStorage to remember whose turn was current on this device.
@@ -95,6 +113,20 @@ function JournalApp() {
   };
 
   useEffect(() => { fetchCouple(); }, [coupleId]);
+
+  // Re-fetch immediately when switching to a game tab
+  useEffect(() => {
+    const GAME_TABS = ["betgame", "truthordare"];
+    if (coupleId && GAME_TABS.includes(tab)) fetchCouple(false);
+  }, [tab]);
+
+  // Auto-poll every 5s on game tabs so partner moves appear without manual refresh
+  useEffect(() => {
+    const GAME_TABS = ["betgame", "truthordare", "games"];
+    if (!coupleId || !GAME_TABS.includes(tab)) return;
+    const id = setInterval(() => fetchCouple(false), 5000);
+    return () => clearInterval(id);
+  }, [coupleId, tab]);
 
   const handleDateToggle = async (letter, currentDone) => {
     if (togglingDate) return;
@@ -234,6 +266,62 @@ function JournalApp() {
     }
   };
 
+  // ── Bet Game (Tic-Tac-Toe with stakes) ─────────────────────────────────
+  const handleStartBet = async () => {
+    if (betBusy) return;
+    setBetBusy(true);
+    try {
+      const res = await API.startBetGame(coupleId);
+      if (res?.data?.ticTacToe) setTicTacToe(res.data.ticTacToe);
+    } catch (e) { console.error(e); }
+    finally { setBetBusy(false); }
+  };
+
+  const handlePlayBet = async (index) => {
+    if (betBusy) return;
+    setBetBusy(true);
+    try {
+      const res = await API.playBetGame(coupleId, index);
+      if (res?.data?.ticTacToe) setTicTacToe(res.data.ticTacToe);
+    } catch (e) { console.error(e); }
+    finally { setBetBusy(false); }
+  };
+
+  const handleSetStake = async (text) => {
+    if (betBusy) return;
+    setBetBusy(true);
+    try {
+      const res = await API.setBetStake(coupleId, text);
+      if (res?.data?.ticTacToe) setTicTacToe(res.data.ticTacToe);
+    } catch (e) { console.error(e); }
+    finally { setBetBusy(false); }
+  };
+
+  const handleReviewStake = async (decision) => {
+    if (betBusy) return;
+    setBetBusy(true);
+    try {
+      const res = await API.reviewBetStake(coupleId, decision);
+      if (res?.data?.ticTacToe) setTicTacToe(res.data.ticTacToe);
+      if (res?.data?.scores)    setScores(res.data.scores);
+    } catch (e) { console.error(e); }
+    finally { setBetBusy(false); }
+  };
+
+  // ── Theme ───────────────────────────────────────────────────────────────
+  const handleChangeTheme = async (next) => {
+    setSavingTheme(true);
+    setTheme(next); // optimistic
+    try {
+      const res = await API.updateTheme(coupleId, next);
+      if (res?.data?.theme) setTheme(res.data.theme);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingTheme(false);
+    }
+  };
+
   const totalDone      = Object.values(dates).filter(d => d.done).length;
   const progress       = Math.round((totalDone / 26) * 100);
   const bucketDone     = buckets.filter(b => b.done).length;
@@ -243,7 +331,8 @@ function JournalApp() {
 
   const p1Name   = user?.name?.split(" ")[0]    || "You";
   const p2Name   = partner?.name?.split(" ")[0] || "Partner";
-  const accent   = TAB_ACCENT[tab] || "#f43f5e";
+  const THEME_TABS = ["dashboard", "dates", "settings", "truthordare", "betgame"];
+  const accent   = THEME_TABS.includes(tab) ? (theme?.primary || "#f43f5e") : (TAB_ACCENT[tab] || "#f43f5e");
   const tabMeta  = TAB_META[tab]   || TAB_META.dashboard;
 
   const badge =
@@ -309,7 +398,7 @@ function JournalApp() {
 
               {/* Brand */}
               <div>
-                <div className="df" style={{fontSize:"16px", fontWeight:700, color:"#f43f5e", letterSpacing:"0.3px", lineHeight:1}}>HeartOZ</div>
+                <div className="df" style={{fontSize:"16px", fontWeight:700, color: theme?.primary || "#f43f5e", letterSpacing:"0.3px", lineHeight:1}}>HeartOZ</div>
                 <div style={{fontSize:"10px", color:"#9ca3af", marginTop:"1px"}}>{p1Name} ♥ {p2Name}</div>
               </div>
             </div>
@@ -368,7 +457,7 @@ function JournalApp() {
       </header>
 
       {/* Nav Drawer */}
-      <NavDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} tab={tab} setTab={setTab} />
+      <NavDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} tab={tab} setTab={setTab} theme={theme} />
 
         {/* progress */}
         <div className="tab-pill flex justify-center items-center m-4 " key={tab} style={{
@@ -387,8 +476,9 @@ function JournalApp() {
       {tab === "dates"     && <DatesTab dates={dates} coupleId={coupleId} user={user} togglingDate={togglingDate} uploadingDate={uploadingDate} onToggle={handleDateToggle} onPhoto={handleDatePhoto} />}
       {tab === "bucket"    && <BucketTab buckets={buckets} coupleId={coupleId} savingBucket={savingBucket} togglingBucket={togglingBucket} deletingBucket={deletingBucket} savingNote={savingNote} onAdd={handleAddBucket} onToggle={handleToggleBucket} onDelete={handleDeleteBucket} onSaveNote={handleSaveNote} />}
       {tab === "memories"  && <MemoriesTab memories={memories} coupleId={coupleId} savingMemory={savingMemory} deletingMemory={deletingMemory} onAdd={handleAddMemory} onDelete={handleDeleteMemory} />}
-      {tab === "games"     && (
-        <GamesTab
+      {tab === "games"       && <GamesTab setTab={setTab} />}
+      {tab === "truthordare" && (
+        <TruthOrDareTab
           user={user}
           partner={partner}
           scores={scores}
@@ -399,8 +489,25 @@ function JournalApp() {
           onReviewGame={handleReviewGame}
         />
       )}
+      {tab === "betgame"    && (
+        <BetGameTab
+          user={user}
+          partner={partner}
+          ticTacToe={ticTacToe}
+          betBusy={betBusy}
+          onStartBet={handleStartBet}
+          onPlayBet={handlePlayBet}
+          onSetStake={handleSetStake}
+          onReviewStake={handleReviewStake}
+        />
+      )}
       {tab === "ideas"     && <IdeasTab coupleId={coupleId} ideaFavs={ideaFavs} ideaDone={ideaDone} setIdeaFavs={setIdeaFavs} setIdeaDone={setIdeaDone} />}
+      {tab === "settings"  && <SettingsTab theme={theme} onChangeTheme={handleChangeTheme} savingTheme={savingTheme} p1Name={p1Name} p2Name={p2Name} />}
 
+      {/* extra bottom padding so content isn't hidden behind the app-style bottom nav */}
+      <div style={{height:"64px"}} />
+
+      <BottomNav tab={tab} setTab={setTab} onMore={() => setDrawerOpen(true)} accent={theme?.primary || "#f43f5e"} />
     </div>
   );
 }

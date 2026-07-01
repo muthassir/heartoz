@@ -1,7 +1,7 @@
 // client/src/pages/LoginPage.jsx
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import GoogleSignInButton from "../components/GoogleSignInButton";
+import GoogleSignInButton from "../components/Googlesigninbutton";
 import logo from "../assets/logo2.png"
 import bucketlist from "../assets/bl.png"
 import game from "../assets/gane.png"

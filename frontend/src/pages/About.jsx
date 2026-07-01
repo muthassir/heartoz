@@ -1,7 +1,7 @@
 // client/src/pages/AboutPage.jsx
 import { useState, useEffect, useRef } from "react";
 import RainingHearts from "../components/Raininghearts";
-import GoogleSignInButton from "../components/GoogleSignInButton";
+import GoogleSignInButton from "../components/Googlesigninbutton";
 import logo from "../assets/logo1.jpg"
 
 const problems = [
