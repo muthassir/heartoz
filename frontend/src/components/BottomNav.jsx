@@ -113,7 +113,7 @@ import { FaHome, FaHeartbeat, FaComments, FaDice, FaBars } from "react-icons/fa"
 const ITEMS = [
   { id:"dashboard",   label:"Home",   icon:<FaHome />     },
   { id:"truthordare", label:"T or D", icon:<FaComments /> },
-  { id:"betgame",     label:"Bet",    icon:<FaDice />      },
+  { id:"betgame",     label:"Games",    icon:<FaDice />      },
   { id:"dates",       label:"Dates",  icon:<FaHeartbeat />},
 ];
 

@@ -3,8 +3,8 @@ import axios from "axios";
 import { auth } from "./firebase";
 
 const api = axios.create({
-  // baseURL:         "https://heartoz.onrender.com/api",
-  baseURL:      "http://localhost:5000/api",
+  baseURL:         "https://heartoz.onrender.com/api",
+  // baseURL:      "http://localhost:5000/api",
   withCredentials: true,
 });
 

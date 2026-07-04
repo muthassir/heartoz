@@ -370,7 +370,14 @@ function JournalApp() {
 
             {/* Left — avatars + HeartOZ */}
             <div style={{display:"flex", alignItems:"center", gap:"9px", flexShrink:0}}>
-              {/* Stacked avatars */}
+            
+              {/* Brand */}
+              <div>
+                <div className="df" style={{fontSize:"16px", fontWeight:700, color: theme?.primary || "#f43f5e", letterSpacing:"0.3px", lineHeight:1}}>HeartOZ</div>
+                {/* <div style={{fontSize:"10px", color:"#9ca3af", marginTop:"1px"}}>{p1Name} ♥ {p2Name}</div> */}
+              </div>
+
+                {/* Stacked avatars */}
               <div style={{position:"relative", display:"flex"}}>
                 <div style={{
                   width:"30px", height:"30px", borderRadius:"50%",
@@ -396,11 +403,6 @@ function JournalApp() {
                 <div style={{position:"absolute",bottom:"0",right:"0",width:"7px",height:"7px",borderRadius:"50%",background:"#10b981",border:"1.5px solid white"}}/>
               </div>
 
-              {/* Brand */}
-              <div>
-                <div className="df" style={{fontSize:"16px", fontWeight:700, color: theme?.primary || "#f43f5e", letterSpacing:"0.3px", lineHeight:1}}>HeartOZ</div>
-                <div style={{fontSize:"10px", color:"#9ca3af", marginTop:"1px"}}>{p1Name} ♥ {p2Name}</div>
-              </div>
             </div>
 
             {/* Centre — current tab label */}
@@ -431,7 +433,7 @@ function JournalApp() {
               onMouseLeave={e=>e.currentTarget.style.background="#fff1f2"}
               ><FaSync /></button>
 
-              <button onClick={() => setDrawerOpen(true)} title="Menu" style={{
+              {/* <button onClick={() => setDrawerOpen(true)} title="Menu" style={{
                 width:"32px", height:"32px", borderRadius:"9px", border:"none", cursor:"pointer",
                 background:`linear-gradient(135deg,${accent},${accent}cc)`,
                 color:"white", fontSize:"13px",
@@ -441,7 +443,7 @@ function JournalApp() {
               }}
               onMouseEnter={e=>e.currentTarget.style.boxShadow=`0 5px 14px ${accent}66`}
               onMouseLeave={e=>e.currentTarget.style.boxShadow=`0 3px 10px ${accent}44`}
-              ><FaBars /></button>
+              ><FaBars /></button> */}
             </div>
           </div>
 
