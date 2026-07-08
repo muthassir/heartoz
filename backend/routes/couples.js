@@ -613,16 +613,20 @@ const emptyTicTacToe = () => ({
   symbols: {},
   stake: { text: "", fromUserId: null, toUserId: null, status: "none" },
   roundsWon: {},
+  history: [],
 });
 
 // Mongoose Map subfields don't auto-flatten on res.json — convert manually.
+// Also explicitly include `history` since old documents pre-dating the schema
+// update won't have the field at all — toObject() skips fields not in the stored doc.
 const serializeTicTacToe = (ticTacToe) => {
   if (!ticTacToe) return emptyTicTacToe();
   const obj = typeof ticTacToe.toObject === "function" ? ticTacToe.toObject() : ticTacToe;
   return {
     ...obj,
-    symbols:   obj.symbols   instanceof Map ? Object.fromEntries(obj.symbols)   : (obj.symbols || {}),
+    symbols:   obj.symbols   instanceof Map ? Object.fromEntries(obj.symbols)   : (obj.symbols   || {}),
     roundsWon: obj.roundsWon instanceof Map ? Object.fromEntries(obj.roundsWon) : (obj.roundsWon || {}),
+    history:   Array.isArray(obj.history) ? obj.history : [],
   };
 };
 
@@ -816,23 +820,7 @@ router.post("/:coupleId/games/tictactoe/stake/review",
         }
       }
 
-      // Log this settled stake to history (most recent first), keep last 50.
-      // Guard: old documents may not have the history array yet.
-      if (!Array.isArray(couple.ticTacToe.history)) {
-        couple.ticTacToe.history = [];
-      }
-      couple.ticTacToe.history.unshift({
-        text:        game.stake.text,
-        fromUserId:  game.stake.fromUserId,
-        toUserId:    game.stake.toUserId,
-        status:      decision === "done" ? "done" : "declined",
-        completedAt: new Date(),
-      });
-      if (couple.ticTacToe.history.length > 50) {
-        couple.ticTacToe.history = couple.ticTacToe.history.slice(0, 50);
-      }
-
-      // Reset board to idle so either player can start a fresh round.
+      // Reset board to idle
       couple.ticTacToe.board = Array(9).fill(null);
       couple.ticTacToe.status = "idle";
       couple.ticTacToe.winnerUserId = null;
@@ -841,7 +829,33 @@ router.post("/:coupleId/games/tictactoe/stake/review",
       couple.markModified('ticTacToe');
       couple.markModified('scores');
       await couple.save();
-      res.json({ ticTacToe: serializeTicTacToe(couple.ticTacToe), scores: Object.fromEntries(couple.scores) });
+
+      // ── Push history entry directly via MongoDB $push ──────────────────
+      // Mongoose can't reliably create a new array field on an existing
+      // subdocument that never had that field — $push handles it atomically.
+      const historyEntry = {
+        text:        game.stake.text,
+        fromUserId:  game.stake.fromUserId,
+        toUserId:    game.stake.toUserId,
+        status:      decision === "done" ? "done" : "declined",
+        completedAt: new Date(),
+      };
+      await Couple.updateOne(
+        { _id: couple._id },
+        {
+          $push: {
+            "ticTacToe.history": {
+              $each:     [historyEntry],
+              $position: 0,   // prepend (most recent first)
+              $slice:    50,  // keep max 50
+            },
+          },
+        }
+      );
+
+      // Re-fetch to include the newly pushed history in the response
+      const updated = await Couple.findById(couple._id);
+      res.json({ ticTacToe: serializeTicTacToe(updated.ticTacToe), scores: Object.fromEntries(updated.scores) });
     } catch (err) {
       logger.error("Bet game stake review error", { error: err.message });
       res.status(500).json({ message: "Failed to review stake." });
@@ -923,10 +937,12 @@ router.patch("/:coupleId/ideas/done",
       const couple = await Couple.findById(req.params.coupleId);
       if (!couple) return res.status(404).json({ message: "Couple not found." });
 
-      if (!couple.ideaDone.includes(ideaId)) {
-        couple.ideaDone.push(ideaId);
-        await couple.save();
+      if (couple.ideaDone.includes(ideaId)) {
+        couple.ideaDone = couple.ideaDone.filter(id => id !== ideaId); // undo done
+      } else {
+        couple.ideaDone.push(ideaId); // mark done
       }
+      await couple.save();
       res.json({ ideaDone: couple.ideaDone });
     } catch (err) {
       logger.error("Toggle idea done error", { error: err.message });

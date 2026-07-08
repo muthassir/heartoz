@@ -115,6 +115,9 @@ export default function Terms() {
           <section>
             <h3 style={{fontSize:"15px", fontWeight:700, color:"#1f2937"}}>7. Contact</h3>
             <p style={{fontSize:"13px", color:"#4b5563"}}>
+              Email: <span style={{color:"#f43f5e"}}>heartozofficial@gmail.com</span>
+            </p>
+            <p style={{fontSize:"13px", color:"#4b5563"}}>
               Email: <span style={{color:"#f43f5e"}}>muthaseir@gmail.com</span>
             </p>
           </section>

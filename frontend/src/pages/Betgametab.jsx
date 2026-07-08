@@ -33,8 +33,10 @@ export default function BetGameTab({
   ticTacToe, betBusy,
   onStartBet, onPlayBet, onSetStake, onReviewStake,
 }) {
-  const myId      = user?.id;
-  const partnerId = partner?._id || partner?.id;
+  // user comes from auth route with explicit `id:` field
+  // partner comes from User.findById().lean() which only has `_id`
+  const myId      = String(user?.id      || "");
+  const partnerId = String(partner?._id  || "");
   const p1Name    = user?.name?.split(" ")[0]    || "You";
   const p2Name    = partner?.name?.split(" ")[0] || "Partner";
 
@@ -391,59 +393,97 @@ export default function BetGameTab({
 
             {/* history list */}
             <div style={{maxHeight:"340px",overflowY:"auto",borderTop:"1px solid #f0fdf4"}}>
-              {filteredHistory.length === 0 ? (
+              {filteredHistory.length === 0 && !(stake.text && ["done","declined"].includes(stake.status)) ? (
                 <div style={{padding:"24px",textAlign:"center",color:"#9ca3af",fontSize:"12px"}}>
                   No settled stakes yet — start a round! 🎲
                 </div>
               ) : (
-                filteredHistory.map((h, idx) => {
-                  const winnerName = h.fromUserId === myId ? p1Name : p2Name;
-                  const loserName  = h.toUserId   === myId ? p1Name : p2Name;
-                  const isDone     = h.status === "done";
-                  return (
-                    <div
-                      key={idx}
-                      style={{
+                <>
+                  {/* Show last stake from stake field when history is empty */}
+                  {filteredHistory.length === 0 && stake.text && ["done","declined"].includes(stake.status) && (
+                    <div style={{padding:"10px 14px 6px"}}>
+                      <div style={{fontSize:"10px",color:"#9ca3af",fontWeight:600,letterSpacing:"0.5px",textTransform:"uppercase",marginBottom:"6px"}}>Last Stake</div>
+                      <div style={{
+                        padding:"12px 14px", borderRadius:"14px",
+                        background: stake.status==="done" ? "#f0fdf4" : "#fefce8",
+                        border:`1px solid ${stake.status==="done" ? "#bbf7d0" : "#fde68a"}`,
+                        display:"flex", gap:"10px", alignItems:"flex-start",
+                      }}>
+                        <div style={{
+                          width:"32px",height:"32px",borderRadius:"50%",flexShrink:0,
+                          background: stake.status==="done" ? "linear-gradient(135deg,#10b981,#059669)" : "linear-gradient(135deg,#fbbf24,#f59e0b)",
+                          display:"flex",alignItems:"center",justifyContent:"center",fontSize:"14px",
+                        }}>
+                          {stake.status==="done" ? "✅" : "🙅"}
+                        </div>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:"12px",fontWeight:700,color:"#1f2937",marginBottom:"3px",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+                            "{stake.text}"
+                          </div>
+                          <div style={{fontSize:"10px",color:"#9ca3af"}}>
+                            <span style={{color:"#10b981",fontWeight:600}}>{stake.fromUserId===myId ? p1Name : p2Name}</span>
+                            {" → "}
+                            <span style={{color:"#f43f5e",fontWeight:600}}>{stake.toUserId===myId ? p1Name : p2Name}</span>
+                            {" · "}
+                            <span style={{
+                              background: stake.status==="done" ? "#dcfce7" : "#fef9c3",
+                              color: stake.status==="done" ? "#059669" : "#92400e",
+                              borderRadius:"6px",padding:"1px 5px",fontWeight:700,
+                            }}>
+                              {stake.status==="done" ? "Done" : "Declined"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      {history.length === 0 && (
+                        <div style={{fontSize:"10px",color:"#d1d5db",textAlign:"center",marginTop:"8px",fontStyle:"italic"}}>
+                          Full history saves from your next round onwards
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {filteredHistory.map((h, idx) => {
+                    const winnerName = h.fromUserId === myId ? p1Name : p2Name;
+                    const loserName  = h.toUserId   === myId ? p1Name : p2Name;
+                    const isDone     = h.status === "done";
+                    return (
+                      <div key={idx} style={{
                         padding:"12px 16px",
                         borderBottom: idx < filteredHistory.length-1 ? "1px solid #f0fdf4" : "none",
                         display:"flex", gap:"10px", alignItems:"flex-start",
-                      }}
-                    >
-                      <div style={{
-                        width:"32px", height:"32px", borderRadius:"50%", flexShrink:0,
-                        background: isDone ? "linear-gradient(135deg,#10b981,#059669)" : "linear-gradient(135deg,#fbbf24,#f59e0b)",
-                        display:"flex", alignItems:"center", justifyContent:"center",
-                        fontSize:"14px",
                       }}>
-                        {isDone ? "✅" : "🙅"}
-                      </div>
-                      <div style={{flex:1}}>
                         <div style={{
-                          fontSize:"12px", fontWeight:700, color:"#1f2937",
-                          marginBottom:"3px", lineHeight:1.4,
-                          whiteSpace:"pre-wrap", wordBreak:"break-word",
+                          width:"32px",height:"32px",borderRadius:"50%",flexShrink:0,
+                          background: isDone ? "linear-gradient(135deg,#10b981,#059669)" : "linear-gradient(135deg,#fbbf24,#f59e0b)",
+                          display:"flex",alignItems:"center",justifyContent:"center",fontSize:"14px",
                         }}>
-                          "{h.text}"
+                          {isDone ? "✅" : "🙅"}
                         </div>
-                        <div style={{fontSize:"10px",color:"#9ca3af"}}>
-                          <span style={{color:"#10b981",fontWeight:600}}>{winnerName}</span>
-                          {" → "}
-                          <span style={{color:"#f43f5e",fontWeight:600}}>{loserName}</span>
-                          {" · "}
-                          <span style={{
-                            background: isDone ? "#dcfce7" : "#fef9c3",
-                            color: isDone ? "#059669" : "#92400e",
-                            borderRadius:"6px", padding:"1px 5px", fontWeight:700,
-                          }}>
-                            {isDone ? "Done" : "Declined"}
-                          </span>
-                          {" · "}
-                          {relTime(h.completedAt)}
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:"12px",fontWeight:700,color:"#1f2937",marginBottom:"3px",lineHeight:1.4,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+                            "{h.text}"
+                          </div>
+                          <div style={{fontSize:"10px",color:"#9ca3af"}}>
+                            <span style={{color:"#10b981",fontWeight:600}}>{winnerName}</span>
+                            {" → "}
+                            <span style={{color:"#f43f5e",fontWeight:600}}>{loserName}</span>
+                            {" · "}
+                            <span style={{
+                              background: isDone ? "#dcfce7" : "#fef9c3",
+                              color: isDone ? "#059669" : "#92400e",
+                              borderRadius:"6px",padding:"1px 5px",fontWeight:700,
+                            }}>
+                              {isDone ? "Done" : "Declined"}
+                            </span>
+                            {" · "}
+                            {relTime(h.completedAt)}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })
+                    );
+                  })}
+                </>
               )}
             </div>
           </div>
